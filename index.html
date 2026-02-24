@@ -38,6 +38,14 @@
             <div id="favorites-list" class="favorites-list"></div>
           </div>
 
+          <div class="control-group">
+            <label for="td-api-key">실시간 데이터 API 키 (TwelveData)</label>
+            <div class="ticker-row">
+              <input type="text" id="td-api-key" placeholder="TwelveData API Key" />
+              <button id="save-api-key-btn" type="button" class="secondary-btn inline-btn">저장</button>
+            </div>
+          </div>
+
           <div class="control-group indicator-row">
             <label>
               <input type="checkbox" id="sma-enabled" checked />
@@ -98,6 +106,7 @@
             <h2 id="chart-title">AAPL 가격</h2>
             <div class="meta-right">
               <span id="last-price" class="price-pill">--</span>
+              <span id="data-source-pill" class="source-pill">데이터: --</span>
               <div class="timeframe-buttons" id="timeframe-buttons">
                 <button id="tf-4h" type="button" class="timeframe-btn">4시간봉</button>
                 <button id="tf-1d" type="button" class="timeframe-btn active">일봉</button>

@@ -12,6 +12,7 @@ const longScoreEl = document.getElementById("score-long");
 const favoritesListEl = document.getElementById("favorites-list");
 const rankingListEl = document.getElementById("ranking-list");
 const rankingUpdatedEl = document.getElementById("ranking-updated");
+const dataSourcePillEl = document.getElementById("data-source-pill");
 const timeframeButtons = {
   "4h": document.getElementById("tf-4h"),
   "1d": document.getElementById("tf-1d"),
@@ -23,6 +24,8 @@ const controls = {
   applySymbolBtn: document.getElementById("apply-symbol-btn"),
   addFavoriteBtn: document.getElementById("add-favorite-btn"),
   manageFavoritesBtn: document.getElementById("manage-favorites-btn"),
+  tdApiKey: document.getElementById("td-api-key"),
+  saveApiKeyBtn: document.getElementById("save-api-key-btn"),
   smaEnabled: document.getElementById("sma-enabled"),
   smaPeriod: document.getElementById("sma-period"),
   emaEnabled: document.getElementById("ema-enabled"),
@@ -40,6 +43,7 @@ const controls = {
 
 const DEFAULT_FAVORITES = ["AAPL", "MSFT", "BTCUSD"];
 const FAVORITES_KEY = "quantscope:favorites";
+const TWELVEDATA_KEY_STORAGE = "quantscope:twelvedata-key";
 const MARKET_CACHE_TTL_MS = 5 * 60 * 1000;
 const TIMEFRAME_CONFIG = {
   "4h": { label: "4시간봉", stepSeconds: 4 * 60 * 60, bars: 360, noise: 1.3 },
@@ -132,6 +136,24 @@ function toYahooSymbol(symbol) {
     return `${symbol.slice(0, 3)}${symbol.slice(3)}=X`;
   }
   return symbol;
+}
+
+function toTwelveDataSymbol(symbol) {
+  if (symbol === "BTCUSD") {
+    return "BTC/USD";
+  }
+  if (/^[A-Z]{6}$/.test(symbol) && symbol.endsWith("USD")) {
+    return `${symbol.slice(0, 3)}/${symbol.slice(3)}`;
+  }
+  return symbol;
+}
+
+function loadTwelveDataKey() {
+  return (localStorage.getItem(TWELVEDATA_KEY_STORAGE) || "").trim();
+}
+
+function saveTwelveDataKey(value) {
+  localStorage.setItem(TWELVEDATA_KEY_STORAGE, value.trim());
 }
 
 function generateSeries(symbol, timeframe = "1d") {
@@ -228,13 +250,81 @@ function parseYahooCandles(payload, timeframe) {
   return candles;
 }
 
+function parseTwelveDataCandles(payload, timeframe) {
+  if (!payload || payload.status === "error" || !Array.isArray(payload.values)) {
+    return null;
+  }
+
+  const candles = [];
+  for (const row of payload.values) {
+    const open = Number.parseFloat(row.open);
+    const high = Number.parseFloat(row.high);
+    const low = Number.parseFloat(row.low);
+    const close = Number.parseFloat(row.close);
+    const volume = Number.parseFloat(row.volume || "0");
+
+    const normalizedDate = String(row.datetime || "").replace(" ", "T");
+    const timeMs = Date.parse(normalizedDate.includes("T") ? `${normalizedDate}Z` : `${normalizedDate}T00:00:00Z`);
+
+    if (
+      Number.isNaN(timeMs) ||
+      !Number.isFinite(open) ||
+      !Number.isFinite(high) ||
+      !Number.isFinite(low) ||
+      !Number.isFinite(close)
+    ) {
+      continue;
+    }
+
+    candles.push({
+      time: Math.floor(timeMs / 1000),
+      open: Number(open.toFixed(2)),
+      high: Number(high.toFixed(2)),
+      low: Number(low.toFixed(2)),
+      close: Number(close.toFixed(2)),
+      volume: Math.max(0, Number.isFinite(volume) ? volume : 0),
+    });
+  }
+
+  if (candles.length === 0) {
+    return null;
+  }
+
+  candles.sort((a, b) => a.time - b.time);
+  if (timeframe === "4h") {
+    return candles;
+  }
+  return candles;
+}
+
 const marketCache = new Map();
 
 async function fetchMarketSeries(symbol, timeframe) {
   const cacheKey = `${symbol}:${timeframe}`;
   const cached = marketCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < MARKET_CACHE_TTL_MS) {
-    return cached.candles;
+    return { candles: cached.candles, source: cached.source };
+  }
+
+  const tdKey = loadTwelveDataKey();
+  if (tdKey) {
+    const tdSymbol = toTwelveDataSymbol(symbol);
+    const tdInterval = timeframe === "1w" ? "1week" : timeframe === "4h" ? "4h" : "1day";
+    const tdUrl = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=${tdInterval}&outputsize=500&apikey=${encodeURIComponent(tdKey)}`;
+
+    try {
+      const tdResponse = await fetch(tdUrl, { cache: "no-store" });
+      if (tdResponse.ok) {
+        const tdPayload = await tdResponse.json();
+        const tdCandles = parseTwelveDataCandles(tdPayload, timeframe);
+        if (tdCandles && tdCandles.length > 20) {
+          marketCache.set(cacheKey, { candles: tdCandles, source: "TwelveData", timestamp: Date.now() });
+          return { candles: tdCandles, source: "TwelveData" };
+        }
+      }
+    } catch (_error) {
+      marketCache.delete(cacheKey);
+    }
   }
 
   const yahooSymbol = toYahooSymbol(symbol);
@@ -252,8 +342,8 @@ async function fetchMarketSeries(symbol, timeframe) {
       const payload = await response.json();
       const parsed = parseYahooCandles(payload, timeframe);
       if (parsed && parsed.length > 20) {
-        marketCache.set(cacheKey, { candles: parsed, timestamp: Date.now() });
-        return parsed;
+        marketCache.set(cacheKey, { candles: parsed, source: "Yahoo", timestamp: Date.now() });
+        return { candles: parsed, source: "Yahoo" };
       }
     } catch (_error) {
       continue;
@@ -261,8 +351,8 @@ async function fetchMarketSeries(symbol, timeframe) {
   }
 
   const fallback = generateSeries(symbol, timeframe);
-  marketCache.set(cacheKey, { candles: fallback, timestamp: Date.now() });
-  return fallback;
+  marketCache.set(cacheKey, { candles: fallback, source: "시뮬레이션", timestamp: Date.now() });
+  return { candles: fallback, source: "시뮬레이션" };
 }
 
 function sma(candles, period) {
@@ -896,7 +986,8 @@ async function render() {
   const frame = TIMEFRAME_CONFIG[timeframe] || TIMEFRAME_CONFIG["1d"];
   currentSymbol = symbol;
   controls.symbolInput.value = symbol;
-  const candles = await fetchMarketSeries(symbol, timeframe);
+  const market = await fetchMarketSeries(symbol, timeframe);
+  const candles = market.candles;
   if (requestId !== renderRequestId) {
     return;
   }
@@ -915,6 +1006,7 @@ async function render() {
 
   const last = candles[candles.length - 1];
   lastPriceEl.textContent = `현재가 ${last.close.toLocaleString()} USD`;
+  dataSourcePillEl.textContent = `데이터: ${market.source}`;
 
   clearIndicators();
 
@@ -1126,6 +1218,11 @@ controls.manageFavoritesBtn.addEventListener("click", () => {
   isFavoritesManageMode = !isFavoritesManageMode;
   renderFavorites();
 });
+controls.saveApiKeyBtn.addEventListener("click", () => {
+  saveTwelveDataKey(controls.tdApiKey.value);
+  marketCache.clear();
+  render();
+});
 controls.autoRandomCount.addEventListener("input", () => {
   if (latestCandles.length > 0) {
     renderAutomaticOverlays(latestCandles, currentSymbol);
@@ -1182,4 +1279,5 @@ syncVisibleRange(priceChart, rsiChart);
 syncVisibleRange(rsiChart, priceChart);
 
 renderFavorites();
+controls.tdApiKey.value = loadTwelveDataKey();
 render();
