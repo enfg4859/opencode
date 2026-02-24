@@ -10,6 +10,8 @@ const shortScoreEl = document.getElementById("score-short");
 const midScoreEl = document.getElementById("score-mid");
 const longScoreEl = document.getElementById("score-long");
 const favoritesListEl = document.getElementById("favorites-list");
+const rankingListEl = document.getElementById("ranking-list");
+const rankingUpdatedEl = document.getElementById("ranking-updated");
 
 const controls = {
   symbolInput: document.getElementById("symbol-input"),
@@ -39,6 +41,14 @@ const TIMEFRAME_CONFIG = {
   "1d": { label: "일봉", stepSeconds: 24 * 60 * 60, bars: 220, noise: 1.0 },
   "1w": { label: "주봉", stepSeconds: 7 * 24 * 60 * 60, bars: 180, noise: 0.8 },
 };
+
+const NASDAQ_TOP50 = [
+  "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "GOOG", "META", "TSLA", "AVGO", "COST",
+  "NFLX", "ASML", "AMD", "ADBE", "PEP", "TMUS", "CSCO", "TXN", "INTC", "QCOM",
+  "AMGN", "INTU", "HON", "AMAT", "BKNG", "ADI", "SBUX", "MDLZ", "ISRG", "GILD",
+  "ADP", "REGN", "LRCX", "PANW", "VRTX", "MU", "MELI", "KLAC", "CRWD", "ABNB",
+  "CDNS", "SNPS", "ORLY", "CSX", "PYPL", "MAR", "FTNT", "MRVL", "CTAS", "AEP",
+];
 
 function seededRandom(seed) {
   let value = seed;
@@ -506,6 +516,69 @@ function applyScoreBadgeClass(element, score) {
   }
 }
 
+function calculateRecommendationScore(candles, params) {
+  const smaData = sma(candles, params.smaPeriod);
+  const emaData = ema(candles, params.emaPeriod);
+  const bands = bollinger(candles, params.bbPeriod, params.bbStd);
+  const rsiData = rsi(candles, params.rsiPeriod);
+  const latestRsiPoint = [...rsiData].reverse().find((row) => row.value !== undefined);
+  const last = candles[candles.length - 1];
+
+  let score = 50;
+  const latestSma = smaData.length > 0 ? smaData[smaData.length - 1].value : null;
+  const latestEma = emaData.length > 0 ? emaData[emaData.length - 1].value : null;
+  const latestUpper = bands.upper.length > 0 ? bands.upper[bands.upper.length - 1].value : null;
+  const latestLower = bands.lower.length > 0 ? bands.lower[bands.lower.length - 1].value : null;
+  const latestRsi = latestRsiPoint ? latestRsiPoint.value : null;
+
+  if (latestSma !== null) {
+    score += last.close >= latestSma ? 10 : -10;
+  }
+  if (latestEma !== null) {
+    score += last.close >= latestEma ? 10 : -10;
+  }
+  if (latestUpper !== null && latestLower !== null) {
+    if (last.close > latestUpper) {
+      score -= 15;
+    } else if (last.close < latestLower) {
+      score += 15;
+    }
+  }
+  if (latestRsi !== null) {
+    if (latestRsi >= 70) {
+      score -= 20;
+    } else if (latestRsi <= 30) {
+      score += 20;
+    }
+  }
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function renderRanking(timeframe, params, currentTicker) {
+  const ranking = NASDAQ_TOP50.map((ticker) => {
+    const candles = generateSeries(ticker, timeframe);
+    const score = calculateRecommendationScore(candles, params);
+    return { ticker, score };
+  }).sort((a, b) => b.score - a.score);
+
+  rankingListEl.innerHTML = "";
+  for (const [index, item] of ranking.slice(0, 20).entries()) {
+    const li = document.createElement("li");
+    if (item.ticker === currentTicker) {
+      li.classList.add("current");
+    }
+    li.textContent = `${index + 1}. ${item.ticker} - ${item.score}점 (${scoreLabel(item.score)})`;
+    rankingListEl.appendChild(li);
+  }
+
+  const now = new Date();
+  rankingUpdatedEl.textContent = `${now.getHours().toString().padStart(2, "0")}:${now
+    .getMinutes()
+    .toString()
+    .padStart(2, "0")}`;
+}
+
 function horizonScore(candles, shortPeriod, longPeriod, rsiPeriod) {
   let score = 50;
   const shortSma = sma(candles, shortPeriod);
@@ -702,6 +775,13 @@ function render() {
   const bbStd = Number.parseFloat(controls.bbStd.value);
   const rsiPeriod = clampPeriod(controls.rsiPeriod.value, 14);
   const safeStd = Number.isFinite(bbStd) && bbStd > 0 ? bbStd : 2;
+  const recommendationParams = {
+    smaPeriod,
+    emaPeriod,
+    bbPeriod,
+    bbStd: safeStd,
+    rsiPeriod,
+  };
   const smaData = sma(candles, smaPeriod);
   const emaData = ema(candles, emaPeriod);
   const bands = bollinger(candles, bbPeriod, safeStd);
@@ -832,6 +912,7 @@ function render() {
   renderHorizonScores(candles);
   renderAutomaticOverlays(candles, symbol);
   renderAdvancedAnalysis(candles);
+  renderRanking(timeframe, recommendationParams, symbol);
 
   priceChart.timeScale().fitContent();
   const alignedRange = priceChart.timeScale().getVisibleLogicalRange();

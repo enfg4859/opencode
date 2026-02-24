@@ -276,6 +276,59 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
+.chart-with-ranking {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 12px;
+}
+
+.chart-stack {
+  min-width: 0;
+}
+
+.ranking-panel {
+  border: 1px solid #29476a;
+  border-radius: 12px;
+  background: rgba(9, 25, 45, 0.82);
+  padding: 10px;
+  height: 612px;
+  overflow: auto;
+}
+
+.ranking-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ranking-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ranking-updated {
+  font-size: 11px;
+  color: #9ab4d2;
+}
+
+.ranking-list {
+  margin: 0;
+  padding-left: 18px;
+  color: #d4e5f8;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.ranking-list li {
+  margin-bottom: 4px;
+}
+
+.ranking-list li.current {
+  color: #9ef1e6;
+}
+
 .rsi-chart {
   margin-top: 12px;
   height: 170px;
@@ -284,6 +337,14 @@ input[type="checkbox"] {
 @media (max-width: 980px) {
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .chart-with-ranking {
+    grid-template-columns: 1fr;
+  }
+
+  .ranking-panel {
+    height: 250px;
   }
 
   .chart {

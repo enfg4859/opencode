@@ -107,8 +107,19 @@
             <h2 id="chart-title">AAPL 가격</h2>
             <span id="last-price" class="price-pill">--</span>
           </div>
-          <div id="price-chart" class="chart"></div>
-          <div id="rsi-chart" class="chart rsi-chart"></div>
+          <div class="chart-with-ranking">
+            <div class="chart-stack">
+              <div id="price-chart" class="chart"></div>
+              <div id="rsi-chart" class="chart rsi-chart"></div>
+            </div>
+            <aside class="ranking-panel">
+              <div class="ranking-head">
+                <h3>추천 순위 (NASDAQ 50)</h3>
+                <span id="ranking-updated" class="ranking-updated">--</span>
+              </div>
+              <ol id="ranking-list" class="ranking-list"></ol>
+            </aside>
+          </div>
 
           <section class="analysis-box analysis-wide">
             <h3>해설 및 추천 점수</h3>
