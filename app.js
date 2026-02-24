@@ -13,6 +13,7 @@ const favoritesListEl = document.getElementById("favorites-list");
 
 const controls = {
   symbolInput: document.getElementById("symbol-input"),
+  timeframe: document.getElementById("timeframe"),
   applySymbolBtn: document.getElementById("apply-symbol-btn"),
   addFavoriteBtn: document.getElementById("add-favorite-btn"),
   manageFavoritesBtn: document.getElementById("manage-favorites-btn"),
@@ -33,6 +34,11 @@ const controls = {
 
 const DEFAULT_FAVORITES = ["AAPL", "MSFT", "BTCUSD"];
 const FAVORITES_KEY = "quantscope:favorites";
+const TIMEFRAME_CONFIG = {
+  "4h": { label: "4시간봉", stepSeconds: 4 * 60 * 60, bars: 360, noise: 1.3 },
+  "1d": { label: "일봉", stepSeconds: 24 * 60 * 60, bars: 220, noise: 1.0 },
+  "1w": { label: "주봉", stepSeconds: 7 * 24 * 60 * 60, bars: 180, noise: 0.8 },
+};
 
 function seededRandom(seed) {
   let value = seed;
@@ -71,19 +77,21 @@ function estimateBasePrice(symbol, seed) {
   return 40 + (seed % 360);
 }
 
-function generateSeries(symbol, bars = 220) {
+function generateSeries(symbol, timeframe = "1d") {
+  const frame = TIMEFRAME_CONFIG[timeframe] || TIMEFRAME_CONFIG["1d"];
+  const bars = frame.bars;
   const seed = hashTicker(symbol);
   const rand = seededRandom(seed);
 
   let basePrice = estimateBasePrice(symbol, seed);
   const now = Math.floor(Date.now() / 1000);
-  const day = 24 * 60 * 60;
-  const start = now - bars * day;
+  const step = frame.stepSeconds;
+  const start = now - bars * step;
 
   const data = [];
   for (let i = 0; i < bars; i += 1) {
-    const time = start + i * day;
-    const drift = (rand() - 0.5) * (basePrice * 0.02);
+    const time = start + i * step;
+    const drift = (rand() - 0.5) * (basePrice * 0.02 * frame.noise);
     const open = basePrice;
     const close = Math.max(1, open + drift);
     const high = Math.max(open, close) + rand() * (basePrice * 0.01);
@@ -155,7 +163,7 @@ function bollinger(candles, period, stdDev) {
 }
 
 function rsi(candles, period) {
-  const out = [];
+  const out = candles.slice(0, period).map((candle) => ({ time: candle.time }));
   if (candles.length <= period) {
     return out;
   }
@@ -174,7 +182,7 @@ function rsi(candles, period) {
   let avgGain = gains / period;
   let avgLoss = losses / period;
 
-  for (let i = period + 1; i < candles.length; i += 1) {
+  for (let i = period; i < candles.length; i += 1) {
     const delta = candles[i].close - candles[i - 1].close;
     const gain = Math.max(delta, 0);
     const loss = Math.max(-delta, 0);
@@ -516,11 +524,13 @@ function horizonScore(candles, shortPeriod, longPeriod, rsiPeriod) {
     score -= 16;
   }
   if (rsiData.length > 0) {
-    const latest = rsiData[rsiData.length - 1].value;
-    if (latest < 30) {
-      score += 12;
-    } else if (latest > 70) {
-      score -= 12;
+    const latest = [...rsiData].reverse().find((row) => row.value !== undefined)?.value;
+    if (latest !== undefined) {
+      if (latest < 30) {
+        score += 12;
+      } else if (latest > 70) {
+        score -= 12;
+      }
     }
   }
 
@@ -663,12 +673,14 @@ function renderAdvancedAnalysis(candles) {
 
 function render() {
   const symbol = normalizeTicker(currentSymbol || controls.symbolInput.value) || "AAPL";
+  const timeframe = controls.timeframe.value;
+  const frame = TIMEFRAME_CONFIG[timeframe] || TIMEFRAME_CONFIG["1d"];
   currentSymbol = symbol;
   controls.symbolInput.value = symbol;
-  const candles = generateSeries(symbol);
+  const candles = generateSeries(symbol, timeframe);
   latestCandles = candles;
 
-  chartTitle.textContent = `${symbol} 가격`;
+  chartTitle.textContent = `${symbol} 가격 (${frame.label})`;
 
   candleSeries.setData(candles);
   volumeSeries.setData(
@@ -689,16 +701,66 @@ function render() {
   const bbPeriod = clampPeriod(controls.bbPeriod.value, 20);
   const bbStd = Number.parseFloat(controls.bbStd.value);
   const rsiPeriod = clampPeriod(controls.rsiPeriod.value, 14);
+  const safeStd = Number.isFinite(bbStd) && bbStd > 0 ? bbStd : 2;
+  const smaData = sma(candles, smaPeriod);
+  const emaData = ema(candles, emaPeriod);
+  const bands = bollinger(candles, bbPeriod, safeStd);
+  const rsiData = rsi(candles, rsiPeriod);
+  const latestRsiPoint = [...rsiData].reverse().find((row) => row.value !== undefined);
+
   const insights = [];
   let score = 50;
-  let latestSma = null;
-  let latestEma = null;
-  let latestUpper = null;
-  let latestLower = null;
-  let latestRsi = null;
+  const latestSma = smaData.length > 0 ? smaData[smaData.length - 1].value : null;
+  const latestEma = emaData.length > 0 ? emaData[emaData.length - 1].value : null;
+  const latestUpper = bands.upper.length > 0 ? bands.upper[bands.upper.length - 1].value : null;
+  const latestLower = bands.lower.length > 0 ? bands.lower[bands.lower.length - 1].value : null;
+  const latestRsi = latestRsiPoint ? latestRsiPoint.value : null;
+
+  if (latestSma !== null) {
+    if (last.close >= latestSma) {
+      score += 10;
+      insights.push(`SMA(${smaPeriod}) 위에서 거래 중: 추세가 상대적으로 강합니다.`);
+    } else {
+      score -= 10;
+      insights.push(`SMA(${smaPeriod}) 아래에서 거래 중: 단기 약세 가능성을 확인하세요.`);
+    }
+  }
+
+  if (latestEma !== null) {
+    if (last.close >= latestEma) {
+      score += 10;
+      insights.push(`EMA(${emaPeriod}) 상향 유지: 모멘텀이 살아있을 수 있습니다.`);
+    } else {
+      score -= 10;
+      insights.push(`EMA(${emaPeriod}) 하향 이탈: 변동성 확대 구간을 주의하세요.`);
+    }
+  }
+
+  if (latestUpper !== null && latestLower !== null) {
+    if (last.close > latestUpper) {
+      score -= 15;
+      insights.push("볼린저 상단 돌파: 단기 과열일 수 있어 분할 대응이 유리합니다.");
+    } else if (last.close < latestLower) {
+      score += 15;
+      insights.push("볼린저 하단 이탈: 과매도 반등 가능성을 점검해볼 수 있습니다.");
+    } else {
+      insights.push("볼린저 밴드 내부 움직임: 추세 확인 후 진입하는 접근이 안전합니다.");
+    }
+  }
+
+  if (latestRsi !== null) {
+    if (latestRsi >= 70) {
+      score -= 20;
+      insights.push(`RSI(${rsiPeriod}) ${latestRsi}: 과매수 구간으로 단기 조정 가능성을 보세요.`);
+    } else if (latestRsi <= 30) {
+      score += 20;
+      insights.push(`RSI(${rsiPeriod}) ${latestRsi}: 과매도 구간으로 반등 여지를 확인하세요.`);
+    } else {
+      insights.push(`RSI(${rsiPeriod}) ${latestRsi}: 중립 구간으로 추세 확인이 필요합니다.`);
+    }
+  }
 
   if (controls.smaEnabled.checked) {
-    const smaData = sma(candles, smaPeriod);
     const smaSeries = priceChart.addLineSeries({
       color: "#f4c542",
       lineWidth: 2,
@@ -706,20 +768,9 @@ function render() {
     });
     smaSeries.setData(smaData);
     indicatorSeries.push(smaSeries);
-    if (smaData.length > 0) {
-      latestSma = smaData[smaData.length - 1].value;
-      if (last.close >= latestSma) {
-        score += 10;
-        insights.push(`SMA(${smaPeriod}) 위에서 거래 중: 추세가 상대적으로 강합니다.`);
-      } else {
-        score -= 10;
-        insights.push(`SMA(${smaPeriod}) 아래에서 거래 중: 단기 약세 가능성을 확인하세요.`);
-      }
-    }
   }
 
   if (controls.emaEnabled.checked) {
-    const emaData = ema(candles, emaPeriod);
     const emaSeries = priceChart.addLineSeries({
       color: "#53a5ff",
       lineWidth: 2,
@@ -727,22 +778,9 @@ function render() {
     });
     emaSeries.setData(emaData);
     indicatorSeries.push(emaSeries);
-    if (emaData.length > 0) {
-      latestEma = emaData[emaData.length - 1].value;
-      if (last.close >= latestEma) {
-        score += 10;
-        insights.push(`EMA(${emaPeriod}) 상향 유지: 모멘텀이 살아있을 수 있습니다.`);
-      } else {
-        score -= 10;
-        insights.push(`EMA(${emaPeriod}) 하향 이탈: 변동성 확대 구간을 주의하세요.`);
-      }
-    }
   }
 
   if (controls.bbEnabled.checked) {
-    const safeStd = Number.isFinite(bbStd) && bbStd > 0 ? bbStd : 2;
-    const bands = bollinger(candles, bbPeriod, safeStd);
-
     const middleSeries = priceChart.addLineSeries({ color: "#d2dde8", lineWidth: 1 });
     const upperSeries = priceChart.addLineSeries({ color: "#5fb2c3", lineWidth: 1 });
     const lowerSeries = priceChart.addLineSeries({ color: "#5fb2c3", lineWidth: 1 });
@@ -752,25 +790,9 @@ function render() {
     lowerSeries.setData(bands.lower);
 
     indicatorSeries.push(middleSeries, upperSeries, lowerSeries);
-
-    if (bands.upper.length > 0 && bands.lower.length > 0) {
-      latestUpper = bands.upper[bands.upper.length - 1].value;
-      latestLower = bands.lower[bands.lower.length - 1].value;
-      if (last.close > latestUpper) {
-        score -= 15;
-        insights.push("볼린저 상단 돌파: 단기 과열일 수 있어 분할 대응이 유리합니다.");
-      } else if (last.close < latestLower) {
-        score += 15;
-        insights.push("볼린저 하단 이탈: 과매도 반등 가능성을 점검해볼 수 있습니다.");
-      } else {
-        insights.push("볼린저 밴드 내부 움직임: 추세 확인 후 진입하는 접근이 안전합니다.");
-      }
-    }
   }
 
   if (controls.rsiEnabled.checked) {
-    const rsiData = rsi(candles, rsiPeriod);
-
     rsiSeries = rsiChart.addLineSeries({
       color: "#d67cff",
       lineWidth: 2,
@@ -778,24 +800,11 @@ function render() {
     });
     rsiSeries.setData(rsiData);
 
-    const bounds = rsiData.map((row) => row.time);
+    const bounds = candles.map((row) => row.time);
     rsiUpperLine = rsiChart.addLineSeries({ color: "#556d93", lineWidth: 1 });
     rsiLowerLine = rsiChart.addLineSeries({ color: "#556d93", lineWidth: 1 });
     rsiUpperLine.setData(bounds.map((time) => ({ time, value: 70 })));
     rsiLowerLine.setData(bounds.map((time) => ({ time, value: 30 })));
-
-    if (rsiData.length > 0) {
-      latestRsi = rsiData[rsiData.length - 1].value;
-      if (latestRsi >= 70) {
-        score -= 20;
-        insights.push(`RSI(${rsiPeriod}) ${latestRsi}: 과매수 구간으로 단기 조정 가능성을 보세요.`);
-      } else if (latestRsi <= 30) {
-        score += 20;
-        insights.push(`RSI(${rsiPeriod}) ${latestRsi}: 과매도 구간으로 반등 여지를 확인하세요.`);
-      } else {
-        insights.push(`RSI(${rsiPeriod}) ${latestRsi}: 중립 구간으로 추세 확인이 필요합니다.`);
-      }
-    }
   }
 
   if (insights.length === 0) {
@@ -895,6 +904,7 @@ controls.autoRandomCount.addEventListener("input", () => {
 });
 
 const liveRenderElements = [
+  controls.timeframe,
   controls.smaEnabled,
   controls.smaPeriod,
   controls.emaEnabled,
