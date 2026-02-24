@@ -10,8 +10,6 @@ const shortScoreEl = document.getElementById("score-short");
 const midScoreEl = document.getElementById("score-mid");
 const longScoreEl = document.getElementById("score-long");
 const favoritesListEl = document.getElementById("favorites-list");
-const rankingListEl = document.getElementById("ranking-list");
-const rankingUpdatedEl = document.getElementById("ranking-updated");
 const dataSourcePillEl = document.getElementById("data-source-pill");
 const timeframeButtons = {
   "4h": document.getElementById("tf-4h"),
@@ -70,14 +68,6 @@ const COMPANY_INFO = {
   PYPL: { name: "페이팔", base: 65 },
   BTCUSD: { name: "비트코인", base: 62000 },
 };
-
-const NASDAQ_TOP50 = [
-  "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "GOOG", "META", "TSLA", "AVGO", "COST",
-  "NFLX", "ASML", "AMD", "ADBE", "PEP", "TMUS", "CSCO", "TXN", "INTC", "QCOM",
-  "AMGN", "INTU", "HON", "AMAT", "BKNG", "ADI", "SBUX", "MDLZ", "ISRG", "GILD",
-  "ADP", "REGN", "LRCX", "PANW", "VRTX", "MU", "MELI", "KLAC", "CRWD", "ABNB",
-  "CDNS", "SNPS", "ORLY", "CSX", "PYPL", "MAR", "FTNT", "MRVL", "CTAS", "AEP",
-];
 
 function seededRandom(seed) {
   let value = seed;
@@ -790,30 +780,6 @@ function calculateRecommendationScore(candles, params) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-function renderRanking(timeframe, params, currentTicker) {
-  const ranking = NASDAQ_TOP50.map((ticker) => {
-    const candles = generateSeries(ticker, timeframe);
-    const score = calculateRecommendationScore(candles, params);
-    return { ticker, score };
-  }).sort((a, b) => b.score - a.score);
-
-  rankingListEl.innerHTML = "";
-  for (const [index, item] of ranking.slice(0, 20).entries()) {
-    const li = document.createElement("li");
-    if (item.ticker === currentTicker) {
-      li.classList.add("current");
-    }
-    li.textContent = `${index + 1}. ${companyLabel(item.ticker)} - ${item.score}점 (${scoreLabel(item.score)})`;
-    rankingListEl.appendChild(li);
-  }
-
-  const now = new Date();
-  rankingUpdatedEl.textContent = `${now.getHours().toString().padStart(2, "0")}:${now
-    .getMinutes()
-    .toString()
-    .padStart(2, "0")}`;
-}
-
 function horizonScore(candles, shortPeriod, longPeriod, rsiPeriod) {
   let score = 50;
   const shortSma = sma(candles, shortPeriod);
@@ -1016,13 +982,6 @@ async function render() {
   const bbStd = Number.parseFloat(controls.bbStd.value);
   const rsiPeriod = clampPeriod(controls.rsiPeriod.value, 14);
   const safeStd = Number.isFinite(bbStd) && bbStd > 0 ? bbStd : 2;
-  const recommendationParams = {
-    smaPeriod,
-    emaPeriod,
-    bbPeriod,
-    bbStd: safeStd,
-    rsiPeriod,
-  };
   const smaData = sma(candles, smaPeriod);
   const emaData = ema(candles, emaPeriod);
   const bands = bollinger(candles, bbPeriod, safeStd);
@@ -1153,7 +1112,6 @@ async function render() {
   renderHorizonScores(candles);
   renderAutomaticOverlays(candles, symbol);
   renderAdvancedAnalysis(candles);
-  renderRanking(timeframe, recommendationParams, symbol);
 
   priceChart.timeScale().fitContent();
   const alignedRange = priceChart.timeScale().getVisibleLogicalRange();
