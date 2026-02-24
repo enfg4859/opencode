@@ -252,6 +252,8 @@ let pendingAnchor = null;
 let drawingSeries = [];
 let autoOverlaySeries = [];
 let drawingStats = { trendline: 0, fibonacci: 0 };
+let autoOverlayStats = { trendline: 0, fibonacci: 0, random: 0 };
+let syncingVisibleRange = false;
 
 function clearIndicators() {
   for (const series of indicatorSeries) {
@@ -295,6 +297,21 @@ function clearAutoOverlays() {
     priceChart.removeSeries(series);
   }
   autoOverlaySeries = [];
+  autoOverlayStats = { trendline: 0, fibonacci: 0, random: 0 };
+}
+
+function syncVisibleRange(sourceChart, targetChart) {
+  sourceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+    if (syncingVisibleRange || range === null) {
+      return;
+    }
+    syncingVisibleRange = true;
+    try {
+      targetChart.timeScale().setVisibleLogicalRange(range);
+    } finally {
+      syncingVisibleRange = false;
+    }
+  });
 }
 
 function loadFavorites() {
@@ -378,7 +395,7 @@ function drawFibonacci(a, b) {
   drawingStats.fibonacci += 1;
 }
 
-function renderAutomaticOverlays(candles) {
+function renderAutomaticOverlays(candles, symbol) {
   clearAutoOverlays();
   if (!controls.autoOverlayEnabled.checked) {
     return;
@@ -392,11 +409,13 @@ function renderAutomaticOverlays(candles) {
     const a = highs[highs.length - 2];
     const b = highs[highs.length - 1];
     drawLineOverlay(autoOverlaySeries, { time: a.time, price: a.price }, { time: b.time, price: b.price }, "#f2a65a", 1);
+    autoOverlayStats.trendline += 1;
   }
   if (lows.length >= 2) {
     const a = lows[lows.length - 2];
     const b = lows[lows.length - 1];
     drawLineOverlay(autoOverlaySeries, { time: a.time, price: a.price }, { time: b.time, price: b.price }, "#6ad3c0", 1);
+    autoOverlayStats.trendline += 1;
   }
 
   if (highs.length >= 1 && lows.length >= 1) {
@@ -416,6 +435,27 @@ function renderAutomaticOverlays(candles) {
         "rgba(127, 200, 181, 0.75)",
         1
       );
+      autoOverlayStats.fibonacci += 1;
+    }
+  }
+
+  if (candles.length > 60) {
+    const rand = seededRandom(hashTicker(symbol) + candles.length * 17);
+    for (let i = 0; i < 2; i += 1) {
+      const startIndex = Math.floor(rand() * (candles.length - 30));
+      const endIndex = Math.min(candles.length - 1, startIndex + 12 + Math.floor(rand() * 18));
+      const startCandle = candles[startIndex];
+      const endCandle = candles[endIndex];
+      const startPrice = rand() > 0.5 ? startCandle.high : startCandle.low;
+      const endPrice = rand() > 0.5 ? endCandle.high : endCandle.low;
+      drawLineOverlay(
+        autoOverlaySeries,
+        { time: startCandle.time, price: Number(startPrice.toFixed(2)) },
+        { time: endCandle.time, price: Number(endPrice.toFixed(2)) },
+        "rgba(239, 200, 126, 0.75)",
+        1
+      );
+      autoOverlayStats.random += 1;
     }
   }
 }
@@ -588,6 +628,11 @@ function renderAdvancedAnalysis(candles) {
   const toolName = drawingMode === "trendline" ? "추세선" : drawingMode === "fibonacci" ? "피보나치" : "없음";
   lines.push(`작도 상태: ${toolName} / 추세선 ${drawingStats.trendline}개 / 피보나치 ${drawingStats.fibonacci}개`);
   lines.push(`자동 작도: ${controls.autoOverlayEnabled.checked ? "활성" : "비활성"}`);
+  if (controls.autoOverlayEnabled.checked) {
+    lines.push(
+      `자동 작도 구성: 추세선 ${autoOverlayStats.trendline}개 / 피보나치 ${autoOverlayStats.fibonacci}개 / 임의 패턴 ${autoOverlayStats.random}개`
+    );
+  }
 
   advancedAnalysisListEl.innerHTML = "";
   for (const text of lines) {
@@ -757,7 +802,7 @@ function render() {
   }
 
   renderHorizonScores(candles);
-  renderAutomaticOverlays(candles);
+  renderAutomaticOverlays(candles, symbol);
   renderAdvancedAnalysis(candles);
 
   priceChart.timeScale().fitContent();
@@ -826,7 +871,7 @@ controls.drawingTool.addEventListener("change", () => {
 });
 controls.autoOverlayEnabled.addEventListener("change", () => {
   if (latestCandles.length > 0) {
-    renderAutomaticOverlays(latestCandles);
+    renderAutomaticOverlays(latestCandles, currentSymbol);
     renderAdvancedAnalysis(latestCandles);
   }
 });
@@ -841,6 +886,9 @@ window.addEventListener("resize", () => {
   priceChart.applyOptions({ width: priceChartContainer.clientWidth });
   rsiChart.applyOptions({ width: rsiChartContainer.clientWidth });
 });
+
+syncVisibleRange(priceChart, rsiChart);
+syncVisibleRange(rsiChart, priceChart);
 
 renderFavorites();
 render();
