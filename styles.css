@@ -114,22 +114,10 @@ input[type="text"] {
   cursor: pointer;
 }
 
-.favorites-manager {
-  margin-top: 10px;
-  padding: 10px;
-  border: 1px solid #2e4b6f;
-  border-radius: 10px;
-  background: rgba(10, 24, 48, 0.7);
-}
-
-.favorites-manager.hidden {
-  display: none;
-}
-
-.danger-btn {
-  border-color: #744252;
-  color: #ffcdd3;
-  background: rgba(122, 55, 73, 0.35);
+.favorites-list.manage-mode .favorite-chip {
+  border-color: #7d4a57;
+  color: #ffd4da;
+  background: rgba(120, 56, 72, 0.28);
 }
 
 .indicator-row label {
@@ -149,16 +137,10 @@ input[type="checkbox"] {
   gap: 8px;
 }
 
-#apply-btn {
-  width: 100%;
-  border: none;
-  border-radius: 10px;
-  padding: 11px;
-  cursor: pointer;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  color: #04111f;
-  font-weight: 700;
-  font-size: 14px;
+.secondary-btn.active {
+  border-color: #7d4a57;
+  color: #ffd4da;
+  background: rgba(120, 56, 72, 0.35);
 }
 
 .secondary-btn {
