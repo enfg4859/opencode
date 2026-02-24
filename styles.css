@@ -214,12 +214,6 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
-#issue-signal {
-  color: #c4d7ee;
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .recommendation-score {
   font-size: 13px;
   font-weight: 700;
