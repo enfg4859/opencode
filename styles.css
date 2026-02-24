@@ -258,6 +258,33 @@ input[type="checkbox"] {
   margin-bottom: 10px;
 }
 
+.meta-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeframe-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.timeframe-btn {
+  border: 1px solid #3a5d84;
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: #112741;
+  color: #c8dbf3;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.timeframe-btn.active {
+  border-color: #2f8a7f;
+  background: rgba(17, 181, 163, 0.25);
+  color: #b5f2e8;
+}
+
 .price-pill {
   font-size: 13px;
   font-weight: 700;

@@ -12,10 +12,14 @@ const longScoreEl = document.getElementById("score-long");
 const favoritesListEl = document.getElementById("favorites-list");
 const rankingListEl = document.getElementById("ranking-list");
 const rankingUpdatedEl = document.getElementById("ranking-updated");
+const timeframeButtons = {
+  "4h": document.getElementById("tf-4h"),
+  "1d": document.getElementById("tf-1d"),
+  "1w": document.getElementById("tf-1w"),
+};
 
 const controls = {
   symbolInput: document.getElementById("symbol-input"),
-  timeframe: document.getElementById("timeframe"),
   applySymbolBtn: document.getElementById("apply-symbol-btn"),
   addFavoriteBtn: document.getElementById("add-favorite-btn"),
   manageFavoritesBtn: document.getElementById("manage-favorites-btn"),
@@ -36,10 +40,31 @@ const controls = {
 
 const DEFAULT_FAVORITES = ["AAPL", "MSFT", "BTCUSD"];
 const FAVORITES_KEY = "quantscope:favorites";
+const MARKET_CACHE_TTL_MS = 5 * 60 * 1000;
 const TIMEFRAME_CONFIG = {
   "4h": { label: "4시간봉", stepSeconds: 4 * 60 * 60, bars: 360, noise: 1.3 },
   "1d": { label: "일봉", stepSeconds: 24 * 60 * 60, bars: 220, noise: 1.0 },
   "1w": { label: "주봉", stepSeconds: 7 * 24 * 60 * 60, bars: 180, noise: 0.8 },
+};
+
+const COMPANY_INFO = {
+  AAPL: { name: "애플", base: 215 },
+  MSFT: { name: "마이크로소프트", base: 385 },
+  NVDA: { name: "엔비디아", base: 900 },
+  AMZN: { name: "아마존", base: 190 },
+  GOOGL: { name: "알파벳", base: 175 },
+  GOOG: { name: "알파벳", base: 176 },
+  META: { name: "메타", base: 520 },
+  TSLA: { name: "테슬라", base: 180 },
+  AVGO: { name: "브로드컴", base: 1450 },
+  COST: { name: "코스트코", base: 780 },
+  NFLX: { name: "넷플릭스", base: 620 },
+  AMD: { name: "AMD", base: 170 },
+  ADBE: { name: "어도비", base: 520 },
+  INTC: { name: "인텔", base: 42 },
+  QCOM: { name: "퀄컴", base: 185 },
+  PYPL: { name: "페이팔", base: 65 },
+  BTCUSD: { name: "비트코인", base: 62000 },
 };
 
 const NASDAQ_TOP50 = [
@@ -75,6 +100,10 @@ function hashTicker(symbol) {
 }
 
 function estimateBasePrice(symbol, seed) {
+  const info = COMPANY_INFO[symbol];
+  if (info && typeof info.base === "number") {
+    return info.base;
+  }
   if (symbol.includes("BTC")) {
     return 42000 + (seed % 9000);
   }
@@ -85,6 +114,24 @@ function estimateBasePrice(symbol, seed) {
     return 1 + (seed % 140) / 100;
   }
   return 40 + (seed % 360);
+}
+
+function companyLabel(symbol) {
+  const info = COMPANY_INFO[symbol];
+  if (info && info.name) {
+    return `${symbol} (${info.name})`;
+  }
+  return symbol;
+}
+
+function toYahooSymbol(symbol) {
+  if (symbol === "BTCUSD") {
+    return "BTC-USD";
+  }
+  if (/^[A-Z]{6}$/.test(symbol) && symbol.endsWith("USD")) {
+    return `${symbol.slice(0, 3)}${symbol.slice(3)}=X`;
+  }
+  return symbol;
 }
 
 function generateSeries(symbol, timeframe = "1d") {
@@ -120,6 +167,102 @@ function generateSeries(symbol, timeframe = "1d") {
     basePrice = close;
   }
   return data;
+}
+
+function aggregateTo4H(candles1h) {
+  const grouped = new Map();
+  for (const candle of candles1h) {
+    const bucket = Math.floor(candle.time / (4 * 60 * 60)) * (4 * 60 * 60);
+    const existing = grouped.get(bucket);
+    if (!existing) {
+      grouped.set(bucket, { ...candle, time: bucket });
+      continue;
+    }
+    existing.high = Math.max(existing.high, candle.high);
+    existing.low = Math.min(existing.low, candle.low);
+    existing.close = candle.close;
+    existing.volume += candle.volume;
+  }
+  return [...grouped.values()].sort((a, b) => a.time - b.time);
+}
+
+function parseYahooCandles(payload, timeframe) {
+  const result = payload?.chart?.result?.[0];
+  const quote = result?.indicators?.quote?.[0];
+  const timestamps = result?.timestamp;
+  if (!quote || !timestamps) {
+    return null;
+  }
+
+  const candles = [];
+  for (let i = 0; i < timestamps.length; i += 1) {
+    const open = quote.open?.[i];
+    const high = quote.high?.[i];
+    const low = quote.low?.[i];
+    const close = quote.close?.[i];
+    const volume = quote.volume?.[i] || 0;
+    if (
+      typeof open !== "number" ||
+      typeof high !== "number" ||
+      typeof low !== "number" ||
+      typeof close !== "number"
+    ) {
+      continue;
+    }
+    candles.push({
+      time: timestamps[i],
+      open: Number(open.toFixed(2)),
+      high: Number(high.toFixed(2)),
+      low: Number(low.toFixed(2)),
+      close: Number(close.toFixed(2)),
+      volume: Math.max(0, Number(volume)),
+    });
+  }
+
+  if (candles.length === 0) {
+    return null;
+  }
+  if (timeframe === "4h") {
+    return aggregateTo4H(candles);
+  }
+  return candles;
+}
+
+const marketCache = new Map();
+
+async function fetchMarketSeries(symbol, timeframe) {
+  const cacheKey = `${symbol}:${timeframe}`;
+  const cached = marketCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < MARKET_CACHE_TTL_MS) {
+    return cached.candles;
+  }
+
+  const yahooSymbol = toYahooSymbol(symbol);
+  const interval = timeframe === "1w" ? "1wk" : timeframe === "4h" ? "1h" : "1d";
+  const range = timeframe === "1w" ? "5y" : timeframe === "4h" ? "6mo" : "1y";
+  const target = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=${interval}&range=${range}`;
+  const urls = [target, `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`];
+
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) {
+        continue;
+      }
+      const payload = await response.json();
+      const parsed = parseYahooCandles(payload, timeframe);
+      if (parsed && parsed.length > 20) {
+        marketCache.set(cacheKey, { candles: parsed, timestamp: Date.now() });
+        return parsed;
+      }
+    } catch (_error) {
+      continue;
+    }
+  }
+
+  const fallback = generateSeries(symbol, timeframe);
+  marketCache.set(cacheKey, { candles: fallback, timestamp: Date.now() });
+  return fallback;
 }
 
 function sma(candles, period) {
@@ -267,6 +410,7 @@ let rsiUpperLine = null;
 let rsiLowerLine = null;
 let latestCandles = [];
 let currentSymbol = normalizeTicker(controls.symbolInput.value) || "AAPL";
+let selectedTimeframe = "1d";
 let drawingMode = "none";
 let pendingAnchor = null;
 let drawingSeries = [];
@@ -275,6 +419,7 @@ let drawingStats = { trendline: 0, fibonacci: 0 };
 let autoOverlayStats = { trendline: 0, fibonacci: 0, random: 0 };
 let syncingVisibleRange = false;
 let isFavoritesManageMode = false;
+let renderRequestId = 0;
 
 function clearIndicators() {
   for (const series of indicatorSeries) {
@@ -568,7 +713,7 @@ function renderRanking(timeframe, params, currentTicker) {
     if (item.ticker === currentTicker) {
       li.classList.add("current");
     }
-    li.textContent = `${index + 1}. ${item.ticker} - ${item.score}점 (${scoreLabel(item.score)})`;
+    li.textContent = `${index + 1}. ${companyLabel(item.ticker)} - ${item.score}점 (${scoreLabel(item.score)})`;
     rankingListEl.appendChild(li);
   }
 
@@ -744,16 +889,20 @@ function renderAdvancedAnalysis(candles) {
   }
 }
 
-function render() {
+async function render() {
+  const requestId = ++renderRequestId;
   const symbol = normalizeTicker(currentSymbol || controls.symbolInput.value) || "AAPL";
-  const timeframe = controls.timeframe.value;
+  const timeframe = selectedTimeframe;
   const frame = TIMEFRAME_CONFIG[timeframe] || TIMEFRAME_CONFIG["1d"];
   currentSymbol = symbol;
   controls.symbolInput.value = symbol;
-  const candles = generateSeries(symbol, timeframe);
+  const candles = await fetchMarketSeries(symbol, timeframe);
+  if (requestId !== renderRequestId) {
+    return;
+  }
   latestCandles = candles;
 
-  chartTitle.textContent = `${symbol} 가격 (${frame.label})`;
+  chartTitle.textContent = `${companyLabel(symbol)} 가격 (${frame.label})`;
 
   candleSeries.setData(candles);
   volumeSeries.setData(
@@ -985,7 +1134,6 @@ controls.autoRandomCount.addEventListener("input", () => {
 });
 
 const liveRenderElements = [
-  controls.timeframe,
   controls.smaEnabled,
   controls.smaPeriod,
   controls.emaEnabled,
@@ -998,6 +1146,16 @@ const liveRenderElements = [
   controls.drawingTool,
   controls.autoOverlayEnabled,
 ];
+
+for (const [timeframe, button] of Object.entries(timeframeButtons)) {
+  button.addEventListener("click", () => {
+    selectedTimeframe = timeframe;
+    for (const [key, target] of Object.entries(timeframeButtons)) {
+      target.classList.toggle("active", key === timeframe);
+    }
+    render();
+  });
+}
 
 for (const element of liveRenderElements) {
   element.addEventListener("change", () => {

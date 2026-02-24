@@ -38,15 +38,6 @@
             <div id="favorites-list" class="favorites-list"></div>
           </div>
 
-          <div class="control-group">
-            <label for="timeframe">봉 주기</label>
-            <select id="timeframe">
-              <option value="4h">4시간봉</option>
-              <option value="1d" selected>일봉</option>
-              <option value="1w">주봉</option>
-            </select>
-          </div>
-
           <div class="control-group indicator-row">
             <label>
               <input type="checkbox" id="sma-enabled" checked />
@@ -105,7 +96,14 @@
         <section class="panel chart-panel">
           <div class="meta-row">
             <h2 id="chart-title">AAPL 가격</h2>
-            <span id="last-price" class="price-pill">--</span>
+            <div class="meta-right">
+              <span id="last-price" class="price-pill">--</span>
+              <div class="timeframe-buttons" id="timeframe-buttons">
+                <button id="tf-4h" type="button" class="timeframe-btn">4시간봉</button>
+                <button id="tf-1d" type="button" class="timeframe-btn active">일봉</button>
+                <button id="tf-1w" type="button" class="timeframe-btn">주봉</button>
+              </div>
+            </div>
           </div>
           <div class="chart-with-ranking">
             <div class="chart-stack">
