@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>퀀트스코프 - 금융 데이터 분석</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>퀀트스코프</h1>
+          <p>인터랙티브 금융 데이터 시각화</p>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel controls-panel">
+          <h2>데이터 및 지표 설정</h2>
+
+          <div class="control-group">
+            <label for="symbol">자산</label>
+            <select id="symbol">
+              <option value="AAPL">AAPL</option>
+              <option value="MSFT">MSFT</option>
+              <option value="BTCUSD">BTCUSD</option>
+            </select>
+          </div>
+
+          <div class="control-group indicator-row">
+            <label>
+              <input type="checkbox" id="sma-enabled" checked />
+              SMA(단순이동평균)
+            </label>
+            <input type="number" id="sma-period" min="2" max="100" value="20" />
+          </div>
+
+          <div class="control-group indicator-row">
+            <label>
+              <input type="checkbox" id="ema-enabled" checked />
+              EMA(지수이동평균)
+            </label>
+            <input type="number" id="ema-period" min="2" max="100" value="50" />
+          </div>
+
+          <div class="control-group indicator-row">
+            <label>
+              <input type="checkbox" id="bb-enabled" checked />
+              볼린저 밴드
+            </label>
+            <div class="two-inputs">
+              <input type="number" id="bb-period" min="2" max="100" value="20" />
+              <input type="number" id="bb-std" min="1" max="4" step="0.5" value="2" />
+            </div>
+          </div>
+
+          <div class="control-group indicator-row">
+            <label>
+              <input type="checkbox" id="rsi-enabled" checked />
+              RSI
+            </label>
+            <input type="number" id="rsi-period" min="2" max="50" value="14" />
+          </div>
+
+          <button id="apply-btn" type="button">설정 적용</button>
+
+          <div class="control-group">
+            <label for="drawing-tool">작도 도구</label>
+            <select id="drawing-tool">
+              <option value="none">사용 안 함</option>
+              <option value="trendline">추세선 (2점)</option>
+              <option value="fibonacci">피보나치 되돌림 (2점)</option>
+            </select>
+          </div>
+          <button id="clear-drawings-btn" type="button" class="secondary-btn">작도 초기화</button>
+
+          <section class="analysis-box">
+            <h3>해설 및 추천 점수</h3>
+            <div class="score-row">
+              <span id="recommendation-signal">분석 대기</span>
+              <span id="recommendation-score" class="recommendation-score">--점</span>
+            </div>
+            <ul id="analysis-list" class="analysis-list"></ul>
+            <h4>고급 기술적 분석</h4>
+            <ul id="advanced-analysis-list" class="analysis-list"></ul>
+          </section>
+
+          <p class="hint">볼린저 입력값: 기간, 표준편차 / 작도는 차트에서 2점을 클릭해 확정</p>
+        </section>
+
+        <section class="panel chart-panel">
+          <div class="meta-row">
+            <h2 id="chart-title">AAPL 가격</h2>
+            <span id="last-price" class="price-pill">--</span>
+          </div>
+          <div id="price-chart" class="chart"></div>
+          <div id="rsi-chart" class="chart rsi-chart"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

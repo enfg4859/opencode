@@ -1,0 +1,638 @@
+const priceChartContainer = document.getElementById("price-chart");
+const rsiChartContainer = document.getElementById("rsi-chart");
+const chartTitle = document.getElementById("chart-title");
+const lastPriceEl = document.getElementById("last-price");
+const recommendationSignalEl = document.getElementById("recommendation-signal");
+const recommendationScoreEl = document.getElementById("recommendation-score");
+const analysisListEl = document.getElementById("analysis-list");
+const advancedAnalysisListEl = document.getElementById("advanced-analysis-list");
+
+const controls = {
+  symbol: document.getElementById("symbol"),
+  smaEnabled: document.getElementById("sma-enabled"),
+  smaPeriod: document.getElementById("sma-period"),
+  emaEnabled: document.getElementById("ema-enabled"),
+  emaPeriod: document.getElementById("ema-period"),
+  bbEnabled: document.getElementById("bb-enabled"),
+  bbPeriod: document.getElementById("bb-period"),
+  bbStd: document.getElementById("bb-std"),
+  rsiEnabled: document.getElementById("rsi-enabled"),
+  rsiPeriod: document.getElementById("rsi-period"),
+  applyBtn: document.getElementById("apply-btn"),
+  drawingTool: document.getElementById("drawing-tool"),
+  clearDrawingsBtn: document.getElementById("clear-drawings-btn"),
+};
+
+const SYMBOL_SEEDS = {
+  AAPL: 182,
+  MSFT: 246,
+  BTCUSD: 388,
+};
+
+function seededRandom(seed) {
+  let value = seed;
+  return () => {
+    value = (value * 9301 + 49297) % 233280;
+    return value / 233280;
+  };
+}
+
+function generateSeries(symbol, bars = 220) {
+  const seed = SYMBOL_SEEDS[symbol] || 111;
+  const rand = seededRandom(seed);
+
+  let basePrice = symbol === "BTCUSD" ? 43000 : symbol === "MSFT" ? 350 : 190;
+  const now = Math.floor(Date.now() / 1000);
+  const day = 24 * 60 * 60;
+  const start = now - bars * day;
+
+  const data = [];
+  for (let i = 0; i < bars; i += 1) {
+    const time = start + i * day;
+    const drift = (rand() - 0.5) * (basePrice * 0.02);
+    const open = basePrice;
+    const close = Math.max(1, open + drift);
+    const high = Math.max(open, close) + rand() * (basePrice * 0.01);
+    const low = Math.min(open, close) - rand() * (basePrice * 0.01);
+    const volume = Math.floor(rand() * 7000000 + 500000);
+
+    data.push({
+      time,
+      open: Number(open.toFixed(2)),
+      high: Number(high.toFixed(2)),
+      low: Number(Math.max(0.1, low).toFixed(2)),
+      close: Number(close.toFixed(2)),
+      volume,
+    });
+
+    basePrice = close;
+  }
+  return data;
+}
+
+function sma(candles, period) {
+  const out = [];
+  for (let i = 0; i < candles.length; i += 1) {
+    if (i + 1 < period) {
+      continue;
+    }
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j += 1) {
+      sum += candles[j].close;
+    }
+    out.push({ time: candles[i].time, value: Number((sum / period).toFixed(2)) });
+  }
+  return out;
+}
+
+function ema(candles, period) {
+  const out = [];
+  if (candles.length < period) {
+    return out;
+  }
+
+  const multiplier = 2 / (period + 1);
+  let emaValue = candles.slice(0, period).reduce((acc, c) => acc + c.close, 0) / period;
+  out.push({ time: candles[period - 1].time, value: Number(emaValue.toFixed(2)) });
+
+  for (let i = period; i < candles.length; i += 1) {
+    emaValue = (candles[i].close - emaValue) * multiplier + emaValue;
+    out.push({ time: candles[i].time, value: Number(emaValue.toFixed(2)) });
+  }
+  return out;
+}
+
+function bollinger(candles, period, stdDev) {
+  const middle = sma(candles, period);
+  const outUpper = [];
+  const outLower = [];
+
+  for (let i = period - 1; i < candles.length; i += 1) {
+    const slice = candles.slice(i - period + 1, i + 1);
+    const mean = middle[i - (period - 1)].value;
+    const variance = slice.reduce((acc, c) => acc + (c.close - mean) ** 2, 0) / period;
+    const deviation = Math.sqrt(variance);
+
+    outUpper.push({ time: candles[i].time, value: Number((mean + stdDev * deviation).toFixed(2)) });
+    outLower.push({ time: candles[i].time, value: Number((mean - stdDev * deviation).toFixed(2)) });
+  }
+
+  return { middle, upper: outUpper, lower: outLower };
+}
+
+function rsi(candles, period) {
+  const out = [];
+  if (candles.length <= period) {
+    return out;
+  }
+
+  let gains = 0;
+  let losses = 0;
+  for (let i = 1; i <= period; i += 1) {
+    const delta = candles[i].close - candles[i - 1].close;
+    if (delta >= 0) {
+      gains += delta;
+    } else {
+      losses += Math.abs(delta);
+    }
+  }
+
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+
+  for (let i = period + 1; i < candles.length; i += 1) {
+    const delta = candles[i].close - candles[i - 1].close;
+    const gain = Math.max(delta, 0);
+    const loss = Math.max(-delta, 0);
+
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    const value = 100 - 100 / (1 + rs);
+    out.push({ time: candles[i].time, value: Number(value.toFixed(2)) });
+  }
+
+  return out;
+}
+
+const chartOptions = {
+  layout: {
+    background: { color: "#0b1a30" },
+    textColor: "#a9bfdb",
+  },
+  grid: {
+    vertLines: { color: "#1f3552" },
+    horzLines: { color: "#1f3552" },
+  },
+  rightPriceScale: {
+    borderColor: "#33527a",
+  },
+  timeScale: {
+    borderColor: "#33527a",
+  },
+  crosshair: {
+    mode: LightweightCharts.CrosshairMode.Magnet,
+  },
+};
+
+const priceChart = LightweightCharts.createChart(priceChartContainer, {
+  ...chartOptions,
+  width: priceChartContainer.clientWidth,
+  height: 430,
+});
+
+const rsiChart = LightweightCharts.createChart(rsiChartContainer, {
+  ...chartOptions,
+  width: rsiChartContainer.clientWidth,
+  height: 170,
+});
+
+const candleSeries = priceChart.addCandlestickSeries({
+  upColor: "#0dbc9f",
+  downColor: "#d44949",
+  borderVisible: false,
+  wickUpColor: "#0dbc9f",
+  wickDownColor: "#d44949",
+});
+
+const volumeSeries = priceChart.addHistogramSeries({
+  priceFormat: { type: "volume" },
+  priceScaleId: "",
+  color: "rgba(71, 132, 203, 0.5)",
+  lastValueVisible: false,
+  priceLineVisible: false,
+});
+
+priceChart.priceScale("").applyOptions({
+  scaleMargins: { top: 0.8, bottom: 0 },
+});
+
+let indicatorSeries = [];
+let rsiSeries = null;
+let rsiUpperLine = null;
+let rsiLowerLine = null;
+let latestCandles = [];
+let drawingMode = "none";
+let pendingAnchor = null;
+let drawingSeries = [];
+let drawingStats = { trendline: 0, fibonacci: 0 };
+
+function clearIndicators() {
+  for (const series of indicatorSeries) {
+    priceChart.removeSeries(series);
+  }
+  indicatorSeries = [];
+
+  if (rsiSeries) {
+    rsiChart.removeSeries(rsiSeries);
+    rsiSeries = null;
+  }
+  if (rsiUpperLine) {
+    rsiChart.removeSeries(rsiUpperLine);
+    rsiUpperLine = null;
+  }
+  if (rsiLowerLine) {
+    rsiChart.removeSeries(rsiLowerLine);
+    rsiLowerLine = null;
+  }
+}
+
+function clampPeriod(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed < 2) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function clearDrawings() {
+  for (const series of drawingSeries) {
+    priceChart.removeSeries(series);
+  }
+  drawingSeries = [];
+  pendingAnchor = null;
+  drawingStats = { trendline: 0, fibonacci: 0 };
+}
+
+function sortedAnchors(a, b) {
+  if (typeof a.time === "number" && typeof b.time === "number" && a.time > b.time) {
+    return [b, a];
+  }
+  return [a, b];
+}
+
+function drawTrendline(a, b) {
+  const [start, end] = sortedAnchors(a, b);
+  const trendSeries = priceChart.addLineSeries({
+    color: "#ffb347",
+    lineWidth: 2,
+    lastValueVisible: false,
+    priceLineVisible: false,
+  });
+  trendSeries.setData([
+    { time: start.time, value: start.price },
+    { time: end.time, value: end.price },
+  ]);
+  drawingSeries.push(trendSeries);
+  drawingStats.trendline += 1;
+}
+
+function drawFibonacci(a, b) {
+  const [start, end] = sortedAnchors(a, b);
+  const high = Math.max(start.price, end.price);
+  const low = Math.min(start.price, end.price);
+  const levels = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+
+  for (const level of levels) {
+    const price = Number((high - (high - low) * level).toFixed(2));
+    const fibSeries = priceChart.addLineSeries({
+      color: "#7fc8b5",
+      lineWidth: 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      title: `Fib ${level}`,
+    });
+    fibSeries.setData([
+      { time: start.time, value: price },
+      { time: end.time, value: price },
+    ]);
+    drawingSeries.push(fibSeries);
+  }
+  drawingStats.fibonacci += 1;
+}
+
+function getSwingPoints(candles, lookback = 3) {
+  const swings = [];
+  for (let i = lookback; i < candles.length - lookback; i += 1) {
+    const current = candles[i];
+    let isHigh = true;
+    let isLow = true;
+
+    for (let j = i - lookback; j <= i + lookback; j += 1) {
+      if (j === i) {
+        continue;
+      }
+      if (candles[j].high >= current.high) {
+        isHigh = false;
+      }
+      if (candles[j].low <= current.low) {
+        isLow = false;
+      }
+    }
+
+    if (isHigh) {
+      swings.push({ type: "high", index: i, price: current.high, time: current.time });
+    }
+    if (isLow) {
+      swings.push({ type: "low", index: i, price: current.low, time: current.time });
+    }
+  }
+  return swings.sort((a, b) => a.index - b.index);
+}
+
+function analyzeElliottWave(candles) {
+  const swings = getSwingPoints(candles, 4);
+  const highs = swings.filter((s) => s.type === "high").slice(-3);
+  const lows = swings.filter((s) => s.type === "low").slice(-3);
+
+  if (highs.length < 3 || lows.length < 3) {
+    return "엘리어트 파동: 스윙 포인트가 부족해 구조 판별 신뢰도가 낮습니다.";
+  }
+
+  const highUp = highs[0].price < highs[1].price && highs[1].price < highs[2].price;
+  const lowUp = lows[0].price < lows[1].price && lows[1].price < lows[2].price;
+  const highDown = highs[0].price > highs[1].price && highs[1].price > highs[2].price;
+  const lowDown = lows[0].price > lows[1].price && lows[1].price > lows[2].price;
+
+  if (highUp && lowUp) {
+    return "엘리어트 파동: 고점/저점이 계단식 상승으로 충격파(상승 1~5파) 가능성이 있습니다.";
+  }
+  if (highDown && lowDown) {
+    return "엘리어트 파동: 고점/저점이 계단식 하락으로 하락 충격파 가능성이 있습니다.";
+  }
+  return "엘리어트 파동: 현재는 조정파(A-B-C) 또는 횡보 전환 가능성이 더 큽니다.";
+}
+
+function analyzeChartPatterns(candles) {
+  const swings = getSwingPoints(candles, 3);
+  const highs = swings.filter((s) => s.type === "high");
+  const lows = swings.filter((s) => s.type === "low");
+  const messages = [];
+
+  const lastHighA = highs[highs.length - 2];
+  const lastHighB = highs[highs.length - 1];
+  if (lastHighA && lastHighB) {
+    const highAvg = (lastHighA.price + lastHighB.price) / 2;
+    const near = Math.abs(lastHighA.price - lastHighB.price) / highAvg <= 0.015;
+    if (near) {
+      messages.push("차트 패턴: 이중 천정(Double Top) 유사 구간이 보여 저항 확인이 필요합니다.");
+    }
+  }
+
+  const lastLowA = lows[lows.length - 2];
+  const lastLowB = lows[lows.length - 1];
+  if (lastLowA && lastLowB) {
+    const lowAvg = (lastLowA.price + lastLowB.price) / 2;
+    const near = Math.abs(lastLowA.price - lastLowB.price) / lowAvg <= 0.015;
+    if (near) {
+      messages.push("차트 패턴: 이중 바닥(Double Bottom) 유사 구간이 보여 지지 반등을 체크하세요.");
+    }
+  }
+
+  const top3 = highs.slice(-3);
+  if (top3.length === 3) {
+    const left = top3[0].price;
+    const head = top3[1].price;
+    const right = top3[2].price;
+    const shouldersNear = Math.abs(left - right) / ((left + right) / 2) <= 0.03;
+    const headHigher = head > left * 1.02 && head > right * 1.02;
+    if (shouldersNear && headHigher) {
+      messages.push("차트 패턴: 헤드앤숄더 유사 구조가 관찰되어 추세 전환 가능성을 점검하세요.");
+    }
+  }
+
+  if (messages.length === 0) {
+    messages.push("차트 패턴: 뚜렷한 반전 패턴은 약하며 추세 지속/횡보 가능성을 함께 보세요.");
+  }
+
+  return messages;
+}
+
+function renderAdvancedAnalysis(candles) {
+  const lines = [];
+  lines.push(analyzeElliottWave(candles));
+  for (const msg of analyzeChartPatterns(candles)) {
+    lines.push(msg);
+  }
+
+  const toolName = drawingMode === "trendline" ? "추세선" : drawingMode === "fibonacci" ? "피보나치" : "없음";
+  lines.push(`작도 상태: ${toolName} / 추세선 ${drawingStats.trendline}개 / 피보나치 ${drawingStats.fibonacci}개`);
+
+  advancedAnalysisListEl.innerHTML = "";
+  for (const text of lines) {
+    const li = document.createElement("li");
+    li.textContent = text;
+    advancedAnalysisListEl.appendChild(li);
+  }
+}
+
+function render() {
+  const symbol = controls.symbol.value;
+  const candles = generateSeries(symbol);
+  latestCandles = candles;
+
+  chartTitle.textContent = `${symbol} 가격`;
+
+  candleSeries.setData(candles);
+  volumeSeries.setData(
+    candles.map((c) => ({
+      time: c.time,
+      value: c.volume,
+      color: c.close >= c.open ? "rgba(17, 181, 163, 0.45)" : "rgba(212, 73, 73, 0.45)",
+    }))
+  );
+
+  const last = candles[candles.length - 1];
+  lastPriceEl.textContent = `현재가 ${last.close.toLocaleString()} USD`;
+
+  clearIndicators();
+
+  const smaPeriod = clampPeriod(controls.smaPeriod.value, 20);
+  const emaPeriod = clampPeriod(controls.emaPeriod.value, 50);
+  const bbPeriod = clampPeriod(controls.bbPeriod.value, 20);
+  const bbStd = Number.parseFloat(controls.bbStd.value);
+  const rsiPeriod = clampPeriod(controls.rsiPeriod.value, 14);
+  const insights = [];
+  let score = 50;
+  let latestSma = null;
+  let latestEma = null;
+  let latestUpper = null;
+  let latestLower = null;
+  let latestRsi = null;
+
+  if (controls.smaEnabled.checked) {
+    const smaData = sma(candles, smaPeriod);
+    const smaSeries = priceChart.addLineSeries({
+      color: "#f4c542",
+      lineWidth: 2,
+      title: `SMA ${smaPeriod}`,
+    });
+    smaSeries.setData(smaData);
+    indicatorSeries.push(smaSeries);
+    if (smaData.length > 0) {
+      latestSma = smaData[smaData.length - 1].value;
+      if (last.close >= latestSma) {
+        score += 10;
+        insights.push(`SMA(${smaPeriod}) 위에서 거래 중: 추세가 상대적으로 강합니다.`);
+      } else {
+        score -= 10;
+        insights.push(`SMA(${smaPeriod}) 아래에서 거래 중: 단기 약세 가능성을 확인하세요.`);
+      }
+    }
+  }
+
+  if (controls.emaEnabled.checked) {
+    const emaData = ema(candles, emaPeriod);
+    const emaSeries = priceChart.addLineSeries({
+      color: "#53a5ff",
+      lineWidth: 2,
+      title: `EMA ${emaPeriod}`,
+    });
+    emaSeries.setData(emaData);
+    indicatorSeries.push(emaSeries);
+    if (emaData.length > 0) {
+      latestEma = emaData[emaData.length - 1].value;
+      if (last.close >= latestEma) {
+        score += 10;
+        insights.push(`EMA(${emaPeriod}) 상향 유지: 모멘텀이 살아있을 수 있습니다.`);
+      } else {
+        score -= 10;
+        insights.push(`EMA(${emaPeriod}) 하향 이탈: 변동성 확대 구간을 주의하세요.`);
+      }
+    }
+  }
+
+  if (controls.bbEnabled.checked) {
+    const safeStd = Number.isFinite(bbStd) && bbStd > 0 ? bbStd : 2;
+    const bands = bollinger(candles, bbPeriod, safeStd);
+
+    const middleSeries = priceChart.addLineSeries({ color: "#d2dde8", lineWidth: 1 });
+    const upperSeries = priceChart.addLineSeries({ color: "#5fb2c3", lineWidth: 1 });
+    const lowerSeries = priceChart.addLineSeries({ color: "#5fb2c3", lineWidth: 1 });
+
+    middleSeries.setData(bands.middle);
+    upperSeries.setData(bands.upper);
+    lowerSeries.setData(bands.lower);
+
+    indicatorSeries.push(middleSeries, upperSeries, lowerSeries);
+
+    if (bands.upper.length > 0 && bands.lower.length > 0) {
+      latestUpper = bands.upper[bands.upper.length - 1].value;
+      latestLower = bands.lower[bands.lower.length - 1].value;
+      if (last.close > latestUpper) {
+        score -= 15;
+        insights.push("볼린저 상단 돌파: 단기 과열일 수 있어 분할 대응이 유리합니다.");
+      } else if (last.close < latestLower) {
+        score += 15;
+        insights.push("볼린저 하단 이탈: 과매도 반등 가능성을 점검해볼 수 있습니다.");
+      } else {
+        insights.push("볼린저 밴드 내부 움직임: 추세 확인 후 진입하는 접근이 안전합니다.");
+      }
+    }
+  }
+
+  if (controls.rsiEnabled.checked) {
+    const rsiData = rsi(candles, rsiPeriod);
+
+    rsiSeries = rsiChart.addLineSeries({
+      color: "#d67cff",
+      lineWidth: 2,
+      title: `RSI ${rsiPeriod}`,
+    });
+    rsiSeries.setData(rsiData);
+
+    const bounds = rsiData.map((row) => row.time);
+    rsiUpperLine = rsiChart.addLineSeries({ color: "#556d93", lineWidth: 1 });
+    rsiLowerLine = rsiChart.addLineSeries({ color: "#556d93", lineWidth: 1 });
+    rsiUpperLine.setData(bounds.map((time) => ({ time, value: 70 })));
+    rsiLowerLine.setData(bounds.map((time) => ({ time, value: 30 })));
+
+    if (rsiData.length > 0) {
+      latestRsi = rsiData[rsiData.length - 1].value;
+      if (latestRsi >= 70) {
+        score -= 20;
+        insights.push(`RSI(${rsiPeriod}) ${latestRsi}: 과매수 구간으로 단기 조정 가능성을 보세요.`);
+      } else if (latestRsi <= 30) {
+        score += 20;
+        insights.push(`RSI(${rsiPeriod}) ${latestRsi}: 과매도 구간으로 반등 여지를 확인하세요.`);
+      } else {
+        insights.push(`RSI(${rsiPeriod}) ${latestRsi}: 중립 구간으로 추세 확인이 필요합니다.`);
+      }
+    }
+  }
+
+  if (insights.length === 0) {
+    insights.push("활성화된 지표가 없어 추천 점수를 계산하지 않았습니다.");
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  let signal = "중립";
+  recommendationScoreEl.classList.remove("buy", "sell");
+  if (score >= 70) {
+    signal = "매수 우위";
+    recommendationScoreEl.classList.add("buy");
+  } else if (score <= 30) {
+    signal = "매도 주의";
+    recommendationScoreEl.classList.add("sell");
+  }
+
+  recommendationSignalEl.textContent = `추천 신호: ${signal}`;
+  recommendationScoreEl.textContent = `${score}점`;
+  analysisListEl.innerHTML = "";
+  for (const text of insights) {
+    const li = document.createElement("li");
+    li.textContent = text;
+    analysisListEl.appendChild(li);
+  }
+
+  renderAdvancedAnalysis(candles);
+
+  priceChart.timeScale().fitContent();
+  rsiChart.timeScale().fitContent();
+}
+
+priceChart.subscribeClick((param) => {
+  if (drawingMode === "none") {
+    return;
+  }
+  if (!param.point || param.time === undefined || param.time === null) {
+    return;
+  }
+
+  const price = candleSeries.coordinateToPrice(param.point.y);
+  if (price === null || price === undefined) {
+    return;
+  }
+
+  const anchor = { time: param.time, price: Number(price.toFixed(2)) };
+
+  if (!pendingAnchor) {
+    pendingAnchor = anchor;
+    return;
+  }
+
+  if (drawingMode === "trendline") {
+    drawTrendline(pendingAnchor, anchor);
+  } else if (drawingMode === "fibonacci") {
+    drawFibonacci(pendingAnchor, anchor);
+  }
+
+  pendingAnchor = null;
+  if (latestCandles.length > 0) {
+    renderAdvancedAnalysis(latestCandles);
+  }
+});
+
+controls.applyBtn.addEventListener("click", render);
+controls.symbol.addEventListener("change", render);
+controls.drawingTool.addEventListener("change", () => {
+  drawingMode = controls.drawingTool.value;
+  pendingAnchor = null;
+  if (latestCandles.length > 0) {
+    renderAdvancedAnalysis(latestCandles);
+  }
+});
+controls.clearDrawingsBtn.addEventListener("click", () => {
+  clearDrawings();
+  if (latestCandles.length > 0) {
+    renderAdvancedAnalysis(latestCandles);
+  }
+});
+
+window.addEventListener("resize", () => {
+  priceChart.applyOptions({ width: priceChartContainer.clientWidth });
+  rsiChart.applyOptions({ width: rsiChartContainer.clientWidth });
+});
+
+render();

@@ -1,0 +1,239 @@
+:root {
+  --bg: #0a1526;
+  --bg-soft: #12223b;
+  --panel: #0f1f35;
+  --text: #e3ecf7;
+  --muted: #8fa6c2;
+  --accent: #11b5a3;
+  --accent-2: #2a7de1;
+  --danger: #d44949;
+  --line: #223a5b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(1200px 600px at 10% -20%, #1d3657 0%, transparent 60%),
+    radial-gradient(900px 500px at 90% -10%, #193e67 0%, transparent 55%),
+    linear-gradient(180deg, #08101d 0%, #0b1728 100%);
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 34px;
+  letter-spacing: 0.4px;
+}
+
+.topbar p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.panel {
+  background: linear-gradient(180deg, rgba(20, 38, 63, 0.82) 0%, rgba(13, 26, 45, 0.92) 100%);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+  backdrop-filter: blur(8px);
+}
+
+h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+}
+
+.control-group {
+  margin-bottom: 12px;
+}
+
+label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+select,
+input[type="number"] {
+  width: 100%;
+  border: 1px solid #2b466a;
+  border-radius: 10px;
+  padding: 10px;
+  background: #0a1830;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.indicator-row label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.two-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+#apply-btn {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 11px;
+  cursor: pointer;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  color: #04111f;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.secondary-btn {
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid #36567f;
+  border-radius: 10px;
+  padding: 9px;
+  cursor: pointer;
+  background: #10243f;
+  color: #cae1fb;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.analysis-box {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #264668;
+  border-radius: 12px;
+  background: rgba(12, 30, 52, 0.8);
+}
+
+.analysis-box h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.analysis-box h4 {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  color: #c5d9f0;
+}
+
+.score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#recommendation-signal {
+  color: #c4d7ee;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.recommendation-score {
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 4px 9px;
+  border: 1px solid #2d4f74;
+  background: rgba(83, 165, 255, 0.14);
+  color: #b5d6ff;
+}
+
+.recommendation-score.buy {
+  border-color: #2d6f68;
+  background: rgba(17, 181, 163, 0.18);
+  color: #a7efe4;
+}
+
+.recommendation-score.sell {
+  border-color: #7b3e4a;
+  background: rgba(212, 73, 73, 0.18);
+  color: #ffc0c0;
+}
+
+.analysis-list {
+  margin: 10px 0 0;
+  padding-left: 16px;
+  color: #adc3de;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.price-pill {
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid #2c486d;
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #aee5db;
+  background: rgba(17, 181, 163, 0.14);
+}
+
+.chart {
+  width: 100%;
+  height: 430px;
+  border: 1px solid #203752;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.rsi-chart {
+  margin-top: 12px;
+  height: 170px;
+}
+
+@media (max-width: 980px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .chart {
+    height: 360px;
+  }
+
+  .rsi-chart {
+    height: 150px;
+  }
+}
