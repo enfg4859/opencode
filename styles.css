@@ -26,7 +26,7 @@ body {
 }
 
 .app-shell {
-  max-width: 1320px;
+  max-width: 1680px;
   margin: 0 auto;
   padding: 28px;
 }
@@ -45,7 +45,7 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 360px 1fr;
   gap: 18px;
   margin-top: 18px;
 }
@@ -169,10 +169,25 @@ input[type="checkbox"] {
 
 .analysis-box {
   margin-top: 14px;
-  padding: 12px;
+  padding: 14px;
   border: 1px solid #264668;
   border-radius: 12px;
   background: rgba(12, 30, 52, 0.8);
+}
+
+.analysis-wide {
+  margin-top: 14px;
+  border: 1px solid #31557d;
+  background: linear-gradient(180deg, rgba(14, 33, 56, 0.95) 0%, rgba(11, 25, 43, 0.95) 100%);
+}
+
+.analysis-wide .analysis-list {
+  font-size: 13px;
+}
+
+.analysis-wide .recommendation-score {
+  font-size: 14px;
+  padding: 5px 11px;
 }
 
 .analysis-box h3 {
@@ -194,6 +209,12 @@ input[type="checkbox"] {
 }
 
 #recommendation-signal {
+  color: #c4d7ee;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#issue-signal {
   color: #c4d7ee;
   font-size: 13px;
   font-weight: 600;

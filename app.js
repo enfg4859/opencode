@@ -9,6 +9,9 @@ const advancedAnalysisListEl = document.getElementById("advanced-analysis-list")
 const shortScoreEl = document.getElementById("score-short");
 const midScoreEl = document.getElementById("score-mid");
 const longScoreEl = document.getElementById("score-long");
+const issueSignalEl = document.getElementById("issue-signal");
+const issueScoreEl = document.getElementById("issue-score");
+const issueListEl = document.getElementById("issue-list");
 const favoritesListEl = document.getElementById("favorites-list");
 
 const controls = {
@@ -430,6 +433,76 @@ function scoreLabel(score) {
   return "중립";
 }
 
+function applyScoreBadgeClass(element, score) {
+  element.classList.remove("buy", "sell");
+  if (score >= 70) {
+    element.classList.add("buy");
+  } else if (score <= 30) {
+    element.classList.add("sell");
+  }
+}
+
+function issueBrief(candles, symbol) {
+  const last = candles[candles.length - 1];
+  const prev = candles[candles.length - 2] || last;
+  const recent = candles.slice(-20);
+  const avgVolume = recent.reduce((acc, c) => acc + c.volume, 0) / recent.length;
+  const dayMove = ((last.close - prev.close) / prev.close) * 100;
+  const rangePct = ((last.high - last.low) / last.close) * 100;
+  const volatility = recent.reduce((acc, c) => acc + ((c.high - c.low) / c.close) * 100, 0) / recent.length;
+  const momentum = ((last.close - candles[Math.max(0, candles.length - 11)].close) / candles[Math.max(0, candles.length - 11)].close) * 100;
+
+  let score = 50;
+  const items = [];
+
+  if (Math.abs(dayMove) >= 2) {
+    items.push(`${symbol}: 당일 변동률 ${dayMove.toFixed(2)}%로 단기 이슈 강도가 높습니다.`);
+    score -= dayMove < 0 ? 8 : 3;
+  } else {
+    items.push(`${symbol}: 당일 변동률 ${dayMove.toFixed(2)}%로 비교적 안정 구간입니다.`);
+    score += 4;
+  }
+
+  if (last.volume > avgVolume * 1.35) {
+    items.push(`거래량 급증: 최근 평균 대비 ${(last.volume / avgVolume).toFixed(2)}배로 수급 이벤트 가능성이 있습니다.`);
+    score += 6;
+  } else {
+    items.push("거래량은 평균 범위로, 이벤트성 수급 신호는 제한적입니다.");
+  }
+
+  if (rangePct > volatility * 1.4) {
+    items.push("장중 고저폭이 최근 평균 대비 확대되어 단기 리스크 관리가 필요합니다.");
+    score -= 8;
+  }
+
+  if (momentum > 4) {
+    items.push(`10일 모멘텀 +${momentum.toFixed(2)}%로 중기 추세 우위가 유지됩니다.`);
+    score += 10;
+  } else if (momentum < -4) {
+    items.push(`10일 모멘텀 ${momentum.toFixed(2)}%로 하락 압력 이슈가 존재합니다.`);
+    score -= 10;
+  } else {
+    items.push(`10일 모멘텀 ${momentum.toFixed(2)}%로 방향성은 중립에 가깝습니다.`);
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  return { score, items };
+}
+
+function renderIssueBrief(candles, symbol) {
+  const result = issueBrief(candles, symbol);
+  issueScoreEl.textContent = `이슈 ${result.score}점 (${scoreLabel(result.score)})`;
+  applyScoreBadgeClass(issueScoreEl, result.score);
+  issueSignalEl.textContent = `이슈 신호: ${scoreLabel(result.score)}`;
+
+  issueListEl.innerHTML = "";
+  for (const text of result.items) {
+    const li = document.createElement("li");
+    li.textContent = text;
+    issueListEl.appendChild(li);
+  }
+}
+
 function horizonScore(candles, shortPeriod, longPeriod, rsiPeriod) {
   let score = 50;
   const shortSma = sma(candles, shortPeriod);
@@ -467,6 +540,9 @@ function renderHorizonScores(candles) {
   shortScoreEl.textContent = `단기 ${short}점 (${scoreLabel(short)})`;
   midScoreEl.textContent = `중기 ${mid}점 (${scoreLabel(mid)})`;
   longScoreEl.textContent = `장기 ${long}점 (${scoreLabel(long)})`;
+  applyScoreBadgeClass(shortScoreEl, short);
+  applyScoreBadgeClass(midScoreEl, mid);
+  applyScoreBadgeClass(longScoreEl, long);
 }
 
 function getSwingPoints(candles, lookback = 3) {
@@ -728,17 +804,15 @@ function render() {
 
   score = Math.max(0, Math.min(100, Math.round(score)));
   let signal = "중립";
-  recommendationScoreEl.classList.remove("buy", "sell");
   if (score >= 70) {
     signal = "매수 우위";
-    recommendationScoreEl.classList.add("buy");
   } else if (score <= 30) {
     signal = "매도 주의";
-    recommendationScoreEl.classList.add("sell");
   }
 
   recommendationSignalEl.textContent = `추천 신호: ${signal}`;
   recommendationScoreEl.textContent = `${score}점`;
+  applyScoreBadgeClass(recommendationScoreEl, score);
   analysisListEl.innerHTML = "";
   for (const text of insights) {
     const li = document.createElement("li");
@@ -747,6 +821,7 @@ function render() {
   }
 
   renderHorizonScores(candles);
+  renderIssueBrief(candles, symbol);
   renderAutomaticOverlays(candles);
   renderAdvancedAnalysis(candles);
 

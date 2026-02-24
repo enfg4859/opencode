@@ -90,23 +90,6 @@
           </div>
           <button id="clear-drawings-btn" type="button" class="secondary-btn">작도 초기화</button>
 
-          <section class="analysis-box">
-            <h3>해설 및 추천 점수</h3>
-            <div class="score-row">
-              <span id="recommendation-signal">분석 대기</span>
-              <span id="recommendation-score" class="recommendation-score">--점</span>
-            </div>
-            <ul id="analysis-list" class="analysis-list"></ul>
-            <h4>기간별 추천 점수</h4>
-            <div class="horizon-scores">
-              <span id="score-short" class="recommendation-score">단기 --점</span>
-              <span id="score-mid" class="recommendation-score">중기 --점</span>
-              <span id="score-long" class="recommendation-score">장기 --점</span>
-            </div>
-            <h4>고급 기술적 분석</h4>
-            <ul id="advanced-analysis-list" class="analysis-list"></ul>
-          </section>
-
           <p class="hint">볼린저 입력값: 기간, 표준편차 / 작도는 차트에서 2점을 클릭해 확정</p>
         </section>
 
@@ -117,6 +100,32 @@
           </div>
           <div id="price-chart" class="chart"></div>
           <div id="rsi-chart" class="chart rsi-chart"></div>
+
+          <section class="analysis-box analysis-wide">
+            <h3>해설 및 추천 점수</h3>
+            <div class="score-row">
+              <span id="recommendation-signal">분석 대기</span>
+              <span id="recommendation-score" class="recommendation-score">--점</span>
+            </div>
+            <ul id="analysis-list" class="analysis-list"></ul>
+
+            <h4>기간별 추천 점수</h4>
+            <div class="horizon-scores">
+              <span id="score-short" class="recommendation-score">단기 --점</span>
+              <span id="score-mid" class="recommendation-score">중기 --점</span>
+              <span id="score-long" class="recommendation-score">장기 --점</span>
+            </div>
+
+            <h4>종목 이슈 브리프</h4>
+            <div class="score-row">
+              <span id="issue-signal">이슈 분석 대기</span>
+              <span id="issue-score" class="recommendation-score">이슈 --점</span>
+            </div>
+            <ul id="issue-list" class="analysis-list"></ul>
+
+            <h4>고급 기술적 분석</h4>
+            <ul id="advanced-analysis-list" class="analysis-list"></ul>
+          </section>
         </section>
       </main>
     </div>
