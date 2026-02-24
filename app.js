@@ -10,11 +10,15 @@ const shortScoreEl = document.getElementById("score-short");
 const midScoreEl = document.getElementById("score-mid");
 const longScoreEl = document.getElementById("score-long");
 const favoritesListEl = document.getElementById("favorites-list");
+const favoritesManagerEl = document.getElementById("favorites-manager");
+const favoriteSelectEl = document.getElementById("favorite-select");
 
 const controls = {
   symbolInput: document.getElementById("symbol-input"),
   applySymbolBtn: document.getElementById("apply-symbol-btn"),
   addFavoriteBtn: document.getElementById("add-favorite-btn"),
+  manageFavoritesBtn: document.getElementById("manage-favorites-btn"),
+  deleteFavoriteBtn: document.getElementById("delete-favorite-btn"),
   smaEnabled: document.getElementById("sma-enabled"),
   smaPeriod: document.getElementById("sma-period"),
   emaEnabled: document.getElementById("ema-enabled"),
@@ -200,6 +204,7 @@ const chartOptions = {
   },
   rightPriceScale: {
     borderColor: "#33527a",
+    minimumWidth: 72,
   },
   timeScale: {
     borderColor: "#33527a",
@@ -254,6 +259,7 @@ let autoOverlaySeries = [];
 let drawingStats = { trendline: 0, fibonacci: 0 };
 let autoOverlayStats = { trendline: 0, fibonacci: 0, random: 0 };
 let syncingVisibleRange = false;
+let isFavoritesManagerOpen = false;
 
 function clearIndicators() {
   for (const series of indicatorSeries) {
@@ -346,6 +352,23 @@ function renderFavorites() {
       render();
     });
     favoritesListEl.appendChild(chip);
+  }
+
+  favoriteSelectEl.innerHTML = "";
+  if (favorites.length === 0) {
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "즐겨찾기 없음";
+    favoriteSelectEl.appendChild(emptyOption);
+    controls.deleteFavoriteBtn.disabled = true;
+  } else {
+    for (const ticker of favorites) {
+      const option = document.createElement("option");
+      option.value = ticker;
+      option.textContent = ticker;
+      favoriteSelectEl.appendChild(option);
+    }
+    controls.deleteFavoriteBtn.disabled = false;
   }
 }
 
@@ -806,7 +829,10 @@ function render() {
   renderAdvancedAnalysis(candles);
 
   priceChart.timeScale().fitContent();
-  rsiChart.timeScale().fitContent();
+  const alignedRange = priceChart.timeScale().getVisibleLogicalRange();
+  if (alignedRange !== null) {
+    rsiChart.timeScale().setVisibleLogicalRange(alignedRange);
+  }
 }
 
 priceChart.subscribeClick((param) => {
@@ -861,6 +887,26 @@ controls.addFavoriteBtn.addEventListener("click", () => {
   }
   currentSymbol = ticker;
   render();
+});
+controls.manageFavoritesBtn.addEventListener("click", () => {
+  isFavoritesManagerOpen = !isFavoritesManagerOpen;
+  favoritesManagerEl.classList.toggle("hidden", !isFavoritesManagerOpen);
+});
+controls.deleteFavoriteBtn.addEventListener("click", () => {
+  const selected = normalizeTicker(favoriteSelectEl.value);
+  if (!selected) {
+    return;
+  }
+  favorites = favorites.filter((ticker) => ticker !== selected);
+  saveFavorites(favorites);
+  renderFavorites();
+
+  if (currentSymbol === selected) {
+    const fallback = favorites[0] || "AAPL";
+    currentSymbol = fallback;
+    controls.symbolInput.value = fallback;
+    render();
+  }
 });
 controls.drawingTool.addEventListener("change", () => {
   drawingMode = controls.drawingTool.value;

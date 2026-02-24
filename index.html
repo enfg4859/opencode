@@ -33,8 +33,16 @@
             </div>
             <div class="ticker-row favorites-row">
               <button id="add-favorite-btn" type="button" class="secondary-btn inline-btn">즐겨찾기 추가</button>
+              <button id="manage-favorites-btn" type="button" class="secondary-btn inline-btn">즐겨찾기 관리</button>
             </div>
             <div id="favorites-list" class="favorites-list"></div>
+            <div id="favorites-manager" class="favorites-manager hidden">
+              <label for="favorite-select">삭제할 종목 선택</label>
+              <div class="ticker-row">
+                <select id="favorite-select"></select>
+                <button id="delete-favorite-btn" type="button" class="secondary-btn inline-btn danger-btn">삭제</button>
+              </div>
+            </div>
           </div>
 
           <div class="control-group indicator-row">
