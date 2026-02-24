@@ -75,7 +75,8 @@ label {
 }
 
 select,
-input[type="number"] {
+input[type="number"],
+input[type="text"] {
   width: 100%;
   border: 1px solid #2b466a;
   border-radius: 10px;
@@ -83,6 +84,34 @@ input[type="number"] {
   background: #0a1830;
   color: var(--text);
   font-size: 14px;
+}
+
+.ticker-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.favorites-row {
+  margin-top: 8px;
+  grid-template-columns: 1fr;
+}
+
+.favorites-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.favorite-chip {
+  border: 1px solid #3c5f86;
+  background: rgba(42, 125, 225, 0.15);
+  color: #c9e2ff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .indicator-row label {
@@ -124,6 +153,12 @@ input[type="checkbox"] {
   background: #10243f;
   color: #cae1fb;
   font-weight: 600;
+}
+
+.inline-btn {
+  width: auto;
+  margin-top: 0;
+  padding: 8px 12px;
 }
 
 .hint {
@@ -192,6 +227,13 @@ input[type="checkbox"] {
   color: #adc3de;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.horizon-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .meta-row {

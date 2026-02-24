@@ -6,9 +6,15 @@ const recommendationSignalEl = document.getElementById("recommendation-signal");
 const recommendationScoreEl = document.getElementById("recommendation-score");
 const analysisListEl = document.getElementById("analysis-list");
 const advancedAnalysisListEl = document.getElementById("advanced-analysis-list");
+const shortScoreEl = document.getElementById("score-short");
+const midScoreEl = document.getElementById("score-mid");
+const longScoreEl = document.getElementById("score-long");
+const favoritesListEl = document.getElementById("favorites-list");
 
 const controls = {
-  symbol: document.getElementById("symbol"),
+  symbolInput: document.getElementById("symbol-input"),
+  applySymbolBtn: document.getElementById("apply-symbol-btn"),
+  addFavoriteBtn: document.getElementById("add-favorite-btn"),
   smaEnabled: document.getElementById("sma-enabled"),
   smaPeriod: document.getElementById("sma-period"),
   emaEnabled: document.getElementById("ema-enabled"),
@@ -20,14 +26,12 @@ const controls = {
   rsiPeriod: document.getElementById("rsi-period"),
   applyBtn: document.getElementById("apply-btn"),
   drawingTool: document.getElementById("drawing-tool"),
+  autoOverlayEnabled: document.getElementById("auto-overlay-enabled"),
   clearDrawingsBtn: document.getElementById("clear-drawings-btn"),
 };
 
-const SYMBOL_SEEDS = {
-  AAPL: 182,
-  MSFT: 246,
-  BTCUSD: 388,
-};
+const DEFAULT_FAVORITES = ["AAPL", "MSFT", "BTCUSD"];
+const FAVORITES_KEY = "quantscope:favorites";
 
 function seededRandom(seed) {
   let value = seed;
@@ -37,11 +41,40 @@ function seededRandom(seed) {
   };
 }
 
+function normalizeTicker(value) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9._-]/g, "")
+    .slice(0, 15);
+}
+
+function hashTicker(symbol) {
+  let hash = 0;
+  for (let i = 0; i < symbol.length; i += 1) {
+    hash = (hash * 31 + symbol.charCodeAt(i)) % 1000003;
+  }
+  return hash || 137;
+}
+
+function estimateBasePrice(symbol, seed) {
+  if (symbol.includes("BTC")) {
+    return 42000 + (seed % 9000);
+  }
+  if (symbol.includes("ETH")) {
+    return 2200 + (seed % 700);
+  }
+  if (symbol.includes("USD") && symbol.length >= 6) {
+    return 1 + (seed % 140) / 100;
+  }
+  return 40 + (seed % 360);
+}
+
 function generateSeries(symbol, bars = 220) {
-  const seed = SYMBOL_SEEDS[symbol] || 111;
+  const seed = hashTicker(symbol);
   const rand = seededRandom(seed);
 
-  let basePrice = symbol === "BTCUSD" ? 43000 : symbol === "MSFT" ? 350 : 190;
+  let basePrice = estimateBasePrice(symbol, seed);
   const now = Math.floor(Date.now() / 1000);
   const day = 24 * 60 * 60;
   const start = now - bars * day;
@@ -213,9 +246,11 @@ let rsiSeries = null;
 let rsiUpperLine = null;
 let rsiLowerLine = null;
 let latestCandles = [];
+let currentSymbol = normalizeTicker(controls.symbolInput.value) || "AAPL";
 let drawingMode = "none";
 let pendingAnchor = null;
 let drawingSeries = [];
+let autoOverlaySeries = [];
 let drawingStats = { trendline: 0, fibonacci: 0 };
 
 function clearIndicators() {
@@ -255,6 +290,48 @@ function clearDrawings() {
   drawingStats = { trendline: 0, fibonacci: 0 };
 }
 
+function clearAutoOverlays() {
+  for (const series of autoOverlaySeries) {
+    priceChart.removeSeries(series);
+  }
+  autoOverlaySeries = [];
+}
+
+function loadFavorites() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]");
+    if (Array.isArray(parsed)) {
+      const normalized = parsed.map((item) => normalizeTicker(item)).filter(Boolean);
+      return [...new Set([...DEFAULT_FAVORITES, ...normalized])].slice(0, 12);
+    }
+  } catch (_error) {
+    return DEFAULT_FAVORITES.slice();
+  }
+  return DEFAULT_FAVORITES.slice();
+}
+
+function saveFavorites(items) {
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(items));
+}
+
+let favorites = loadFavorites();
+
+function renderFavorites() {
+  favoritesListEl.innerHTML = "";
+  for (const ticker of favorites) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "favorite-chip";
+    chip.textContent = ticker;
+    chip.addEventListener("click", () => {
+      controls.symbolInput.value = ticker;
+      currentSymbol = ticker;
+      render();
+    });
+    favoritesListEl.appendChild(chip);
+  }
+}
+
 function sortedAnchors(a, b) {
   if (typeof a.time === "number" && typeof b.time === "number" && a.time > b.time) {
     return [b, a];
@@ -262,19 +339,23 @@ function sortedAnchors(a, b) {
   return [a, b];
 }
 
-function drawTrendline(a, b) {
-  const [start, end] = sortedAnchors(a, b);
-  const trendSeries = priceChart.addLineSeries({
-    color: "#ffb347",
-    lineWidth: 2,
+function drawLineOverlay(targetArray, start, end, color, width = 1) {
+  const series = priceChart.addLineSeries({
+    color,
+    lineWidth: width,
     lastValueVisible: false,
     priceLineVisible: false,
   });
-  trendSeries.setData([
+  series.setData([
     { time: start.time, value: start.price },
     { time: end.time, value: end.price },
   ]);
-  drawingSeries.push(trendSeries);
+  targetArray.push(series);
+}
+
+function drawTrendline(a, b) {
+  const [start, end] = sortedAnchors(a, b);
+  drawLineOverlay(drawingSeries, start, end, "#ffb347", 2);
   drawingStats.trendline += 1;
 }
 
@@ -286,20 +367,106 @@ function drawFibonacci(a, b) {
 
   for (const level of levels) {
     const price = Number((high - (high - low) * level).toFixed(2));
-    const fibSeries = priceChart.addLineSeries({
-      color: "#7fc8b5",
-      lineWidth: 1,
-      lastValueVisible: false,
-      priceLineVisible: false,
-      title: `Fib ${level}`,
-    });
-    fibSeries.setData([
-      { time: start.time, value: price },
-      { time: end.time, value: price },
-    ]);
-    drawingSeries.push(fibSeries);
+    drawLineOverlay(
+      drawingSeries,
+      { time: start.time, price },
+      { time: end.time, price },
+      "#7fc8b5",
+      1
+    );
   }
   drawingStats.fibonacci += 1;
+}
+
+function renderAutomaticOverlays(candles) {
+  clearAutoOverlays();
+  if (!controls.autoOverlayEnabled.checked) {
+    return;
+  }
+
+  const swings = getSwingPoints(candles, 4);
+  const highs = swings.filter((s) => s.type === "high");
+  const lows = swings.filter((s) => s.type === "low");
+
+  if (highs.length >= 2) {
+    const a = highs[highs.length - 2];
+    const b = highs[highs.length - 1];
+    drawLineOverlay(autoOverlaySeries, { time: a.time, price: a.price }, { time: b.time, price: b.price }, "#f2a65a", 1);
+  }
+  if (lows.length >= 2) {
+    const a = lows[lows.length - 2];
+    const b = lows[lows.length - 1];
+    drawLineOverlay(autoOverlaySeries, { time: a.time, price: a.price }, { time: b.time, price: b.price }, "#6ad3c0", 1);
+  }
+
+  if (highs.length >= 1 && lows.length >= 1) {
+    const pivotHigh = highs[highs.length - 1];
+    const pivotLow = lows[lows.length - 1];
+    const start = pivotHigh.time < pivotLow.time ? pivotHigh : pivotLow;
+    const end = pivotHigh.time < pivotLow.time ? pivotLow : pivotHigh;
+    const high = Math.max(pivotHigh.price, pivotLow.price);
+    const low = Math.min(pivotHigh.price, pivotLow.price);
+    const levels = [0.236, 0.382, 0.5, 0.618, 0.786];
+    for (const level of levels) {
+      const price = Number((high - (high - low) * level).toFixed(2));
+      drawLineOverlay(
+        autoOverlaySeries,
+        { time: start.time, price },
+        { time: end.time, price },
+        "rgba(127, 200, 181, 0.75)",
+        1
+      );
+    }
+  }
+}
+
+function scoreLabel(score) {
+  if (score >= 70) {
+    return "매수 우위";
+  }
+  if (score <= 30) {
+    return "매도 주의";
+  }
+  return "중립";
+}
+
+function horizonScore(candles, shortPeriod, longPeriod, rsiPeriod) {
+  let score = 50;
+  const shortSma = sma(candles, shortPeriod);
+  const longEma = ema(candles, longPeriod);
+  const rsiData = rsi(candles, rsiPeriod);
+  const last = candles[candles.length - 1];
+
+  if (shortSma.length > 0 && last.close > shortSma[shortSma.length - 1].value) {
+    score += 18;
+  } else {
+    score -= 18;
+  }
+  if (longEma.length > 0 && last.close > longEma[longEma.length - 1].value) {
+    score += 16;
+  } else {
+    score -= 16;
+  }
+  if (rsiData.length > 0) {
+    const latest = rsiData[rsiData.length - 1].value;
+    if (latest < 30) {
+      score += 12;
+    } else if (latest > 70) {
+      score -= 12;
+    }
+  }
+
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function renderHorizonScores(candles) {
+  const short = horizonScore(candles, 7, 20, 7);
+  const mid = horizonScore(candles, 20, 50, 14);
+  const long = horizonScore(candles, 50, 100, 21);
+
+  shortScoreEl.textContent = `단기 ${short}점 (${scoreLabel(short)})`;
+  midScoreEl.textContent = `중기 ${mid}점 (${scoreLabel(mid)})`;
+  longScoreEl.textContent = `장기 ${long}점 (${scoreLabel(long)})`;
 }
 
 function getSwingPoints(candles, lookback = 3) {
@@ -408,6 +575,7 @@ function renderAdvancedAnalysis(candles) {
 
   const toolName = drawingMode === "trendline" ? "추세선" : drawingMode === "fibonacci" ? "피보나치" : "없음";
   lines.push(`작도 상태: ${toolName} / 추세선 ${drawingStats.trendline}개 / 피보나치 ${drawingStats.fibonacci}개`);
+  lines.push(`자동 작도: ${controls.autoOverlayEnabled.checked ? "활성" : "비활성"}`);
 
   advancedAnalysisListEl.innerHTML = "";
   for (const text of lines) {
@@ -418,7 +586,9 @@ function renderAdvancedAnalysis(candles) {
 }
 
 function render() {
-  const symbol = controls.symbol.value;
+  const symbol = normalizeTicker(currentSymbol || controls.symbolInput.value) || "AAPL";
+  currentSymbol = symbol;
+  controls.symbolInput.value = symbol;
   const candles = generateSeries(symbol);
   latestCandles = candles;
 
@@ -576,6 +746,8 @@ function render() {
     analysisListEl.appendChild(li);
   }
 
+  renderHorizonScores(candles);
+  renderAutomaticOverlays(candles);
   renderAdvancedAnalysis(candles);
 
   priceChart.timeScale().fitContent();
@@ -615,11 +787,36 @@ priceChart.subscribeClick((param) => {
 });
 
 controls.applyBtn.addEventListener("click", render);
-controls.symbol.addEventListener("change", render);
+controls.applySymbolBtn.addEventListener("click", () => {
+  currentSymbol = normalizeTicker(controls.symbolInput.value) || "AAPL";
+  render();
+});
+controls.symbolInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    currentSymbol = normalizeTicker(controls.symbolInput.value) || "AAPL";
+    render();
+  }
+});
+controls.addFavoriteBtn.addEventListener("click", () => {
+  const ticker = normalizeTicker(controls.symbolInput.value) || "AAPL";
+  if (!favorites.includes(ticker)) {
+    favorites = [ticker, ...favorites].slice(0, 12);
+    saveFavorites(favorites);
+    renderFavorites();
+  }
+  currentSymbol = ticker;
+  render();
+});
 controls.drawingTool.addEventListener("change", () => {
   drawingMode = controls.drawingTool.value;
   pendingAnchor = null;
   if (latestCandles.length > 0) {
+    renderAdvancedAnalysis(latestCandles);
+  }
+});
+controls.autoOverlayEnabled.addEventListener("change", () => {
+  if (latestCandles.length > 0) {
+    renderAutomaticOverlays(latestCandles);
     renderAdvancedAnalysis(latestCandles);
   }
 });
@@ -635,4 +832,5 @@ window.addEventListener("resize", () => {
   rsiChart.applyOptions({ width: rsiChartContainer.clientWidth });
 });
 
+renderFavorites();
 render();
